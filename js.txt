@@ -1,0 +1,28 @@
+текстовых бандлов: 42, суммарно 9665249 символов
+
+== api.auth хост: 0 уникальных
+
+== id.2gis: 0 уникальных
+
+== пути с sms/phone: 16 уникальных
+   "PhoneWidget"   <- ['WEB_PROFILE_BADGE.umd.js']
+   "application/x-www-form-urlencoded"   <- ['jquery-1.3.2.b446af196d46485', 'rarity.0e1c9cf7929d1d03ca7e.']
+   "charCode"   <- ['react.73aed46cec595fcc5c25.j']
+   "code"   <- ['WEB_PROFILE_BADGE.umd.js']
+   "draco_decoder_gltf.wasm"   <- ['draco_wasm_wrapper_gltf.js', 'rarity.0e1c9cf7929d1d03ca7e.']
+   "getMemoryFootprint"   <- ['rarity.0e1c9cf7929d1d03ca7e.']
+   "gotpointercapture"   <- ['react.73aed46cec595fcc5c25.j']
+   "httpStatusCode"   <- ['WEB_PROFILE_BADGE.umd.js']
+   "phone"   <- ['9487.71e4697f0c675ce32c85.js', 'WEB_PROFILE_BADGE.umd.js']
+   "phoneNumber"   <- ['cs-0.8.9.js']
+   "unicode"   <- ['WEB_PROFILE_BADGE.umd.js']
+   "unicode-bidi"   <- ['vendor.28a427473b23574aa87a.']
+   "web_profile_phone_widget"   <- ['WEB_PROFILE_BADGE.umd.js']
+   "x-elk-error-code"   <- ['WEB_PROFILE_BADGE.umd.js']
+   //github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md`   <- ['vendor.28a427473b23574aa87a.']
+   /draco_decoder_gltf.js`   <- ['rarity.0e1c9cf7929d1d03ca7e.']
+
+== /_/auth/*: 0 уникальных
+
+== grant/oauth: 0 уникальных
+
