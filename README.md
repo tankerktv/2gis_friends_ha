@@ -1,0 +1,171 @@
+# 2GIS Friends → Home Assistant
+
+Друзья с карты 2ГИС в своём HA: точка на карте, заряд батареи, время последнего
+обновления. Личный self-hosted проект — данные никуда не экспортируются.
+
+Протокол разобран по HAR веб-версии и 10-минутному прогону,
+подробности в [docs/findings.md](docs/findings.md).
+
+## Два способа
+
+| | Интеграция (`custom_components/`) | Мост (`bridge/`) |
+|---|---|---|
+| Установка | HACS или копирование в `/config` | Docker-контейнер рядом с HA |
+| Зависимости | нет, всё на встроенном aiohttp | MQTT-брокер |
+| Настройка | через UI, config flow | `.env` |
+| Сущности | нативные, `device_tracker` + 2 сенсора | те же, через MQTT Discovery |
+
+**Интеграция — основной путь.** Мост оставлен как рабочая альтернатива, если
+хочется держать логику вне HA.
+
+---
+
+## Установка интеграции
+
+### Через HACS
+
+HACS умеет ставить **только с GitHub** — он ходит через GitHub API, и
+кастомный репозиторий задаётся как `owner/repo` на github.com. Поддержки GitLab
+в нём нет. Поэтому: GitLab остаётся источником, GitHub — зеркалом (см. ниже).
+
+1. HACS → Integrations → ⋮ → Custom repositories
+2. URL зеркала на GitHub, категория **Integration**
+3. Найти «2GIS Friends» → Download
+4. Перезапустить HA
+5. Настройки → Устройства и службы → Добавить интеграцию → «2GIS Friends»
+
+### Без HACS, прямо из GitLab
+
+HACS для установки не обязателен — интеграция это просто папка:
+
+```bash
+cd /config
+git clone https://gitlab.com/<owner>/<repo>.git /tmp/twogis
+mkdir -p custom_components
+cp -r /tmp/twogis/custom_components/twogis_friends custom_components/
+```
+
+Обновление — `git pull` и повтор копирования. Автоматизировать можно
+дополнением **Git pull** из репозитория add-on'ов HA.
+
+---
+
+## Токен
+
+При добавлении интеграция попросит `access_token` — непрозрачную строку из
+40 hex-символов (не JWE, см. findings). Где взять:
+
+> F12 → Network → фильтр **WS** → соединение `user/ws` → Headers →
+> Request URL → значение параметра `token=`
+
+Токен сразу проверяется через `api.auth.2gis.com/2.1/users/me`, так что опечатку
+видно на месте. Когда протухнет, HA сам поднимет диалог реавторизации —
+вставить свежий и всё.
+
+Если рядом лежит HAR-дамп, токен достаётся из него без копипасты:
+
+```bash
+python tools/token_from_har.py путь/к/2gis.ru.har
+```
+
+---
+
+## Что появится в HA
+
+На каждого друга — устройство с тремя сущностями:
+
+| Сущность | Что |
+|---|---|
+| `device_tracker.<имя>` | точка на карте, `source_type: gps` |
+| `sensor.<имя>_battery` | заряд, `device_class: battery` |
+| `sensor.<имя>_last_seen` | время апдейта, `device_class: timestamp` |
+
+Атрибуты трекера: `movement`, `place_status`, `speed`, `course`,
+`battery_charging`, `last_seen`.
+
+`place_status` — классификация места **самим 2ГИС** (`home`, `work`), то есть
+«частое место друга», а не твоя зона в HA. Зоны HA считает сам, по координатам.
+
+### Область охвата
+
+2ГИС отдаёт обновления только по друзьям **внутри области карты**, поэтому
+интеграция шлёт рамку вокруг координат твоего HA. Радиус по умолчанию — 2°
+(≈220 км), меняется в Настройках интеграции. Друг за пределами рамки просто не
+будет обновляться.
+
+---
+
+## GitLab как источник, GitHub как зеркало
+
+### Вариант 1: встроенное push-зеркало (проще)
+
+Settings → Repository → **Mirroring repositories** → Push:
+
+```
+https://<github-username>:<PAT>@github.com/<owner>/<repo>.git
+```
+
+PAT — classic со scope `repo` либо fine-grained с `Contents: read/write`.
+Push-зеркалирование доступно в бесплатном GitLab; ветки и теги уезжают
+автоматически при каждом push.
+
+Минус: зеркало переносит теги, но **не создаёт GitHub Releases**, а HACS
+предпочитает ставить именно релизы (без них берёт ветку по умолчанию —
+тоже работает, но без версий).
+
+### Вариант 2: CI (создаёт и релизы)
+
+[.gitlab-ci.yml](.gitlab-ci.yml) уже настроен. Нужны две переменные проекта
+(Settings → CI/CD → Variables, обе **Masked**):
+
+| Переменная | Значение |
+|---|---|
+| `GITHUB_TOKEN` | PAT github.com, scope `repo` |
+| `GITHUB_REPO` | `owner/repo` |
+
+Что делает пайплайн:
+
+- `validate` — проверяет `manifest.json` (обязательные ключи, версия вида
+  `X.Y.Z`, отсутствие `CHANGE_ME`) и компилирует Python;
+- `mirror` — пушит ветку по умолчанию и теги на GitHub;
+- `release` — на тег `vX.Y.Z` создаёт GitHub Release.
+
+Релиз выпускается так:
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+**Версия в `manifest.json` обязана совпадать с тегом** — пайплайн падает, если
+разошлись. Иначе HACS поставит одно, а HA покажет другое.
+
+### Перед первым запуском
+
+В `custom_components/twogis_friends/manifest.json` заменить `CHANGE_ME` в
+`documentation` и `issue_tracker` на адрес зеркала — иначе `validate` не пройдёт,
+и HACS будет ругаться.
+
+На GitHub-зеркале работает [.github/workflows/validate.yml](.github/workflows/validate.yml):
+hassfest и HACS Action ловят ошибки структуры до установки.
+
+---
+
+## Альтернатива: мост через MQTT
+
+Если логику хочется держать вне HA — `bridge/` делает то же самое отдельным
+контейнером, публикуя в MQTT с автообнаружением.
+
+```bash
+cp .env.example .env    # ZOND_TOKEN, MQTT_*, ZOND_VIEWPORT
+docker compose up -d --build
+```
+
+Инструменты разведки (`tools/ws_probe.py`, `tools/scrub.py`,
+`tools/token_from_har.py`) описаны в [docs/devtools-capture.md](docs/devtools-capture.md).
+
+## Безопасность
+
+- `.env`, `data/`, `*.har`, `probe_*.txt` — в `.gitignore`.
+- HAR с сессией 2ГИС содержит живой токен, твой email и домашние координаты
+  друзей. Не выкладывай его; после отладки токен стоит ротировать.
+- Токен в HA хранится в конфиге записи, наружу не уходит.

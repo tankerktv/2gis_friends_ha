@@ -1,0 +1,22 @@
+.env
+data/
+*.log
+
+# дампы и секреты разведки
+*.har
+probe_*.txt
+tools/scrub-map.json
+cookies.txt
+curl.txt
+raw_*.txt
+raw_*.json
+storage_state.json
+token.json
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# локальные настройки Claude Code
+.claude/settings.local.json
