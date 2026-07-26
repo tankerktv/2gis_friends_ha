@@ -20,3 +20,6 @@ venv/
 
 # локальные настройки Claude Code
 .claude/settings.local.json
+login*.har
+login*.json
+clean_test.json
