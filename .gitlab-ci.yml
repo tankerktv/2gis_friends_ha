@@ -1,0 +1,110 @@
+# GitLab — источник истины. GitHub нужен только потому, что HACS умеет ходить
+# исключительно в него: ставит из GitHub Releases (или из ветки по умолчанию,
+# если релизов нет).
+#
+# Переменные проекта (Settings -> CI/CD -> Variables), обе Masked:
+#   GITHUB_TOKEN  — PAT на github.com со scope `repo` (classic) либо
+#                   fine-grained с правами Contents: read/write
+#   GITHUB_REPO   — owner/repo, например tanker/twogis-friends-ha
+#
+# Ветка отзеркаливается на каждый push, релиз создаётся на каждый тег vX.Y.Z.
+
+stages: [validate, mirror, release]
+
+default:
+  image: python:3.12-alpine
+  before_script:
+    - apk add --no-cache git curl jq >/dev/null
+
+# --- проверки ---------------------------------------------------------------
+
+validate:manifest:
+  stage: validate
+  script:
+    - |
+      python - <<'PY'
+      import json, pathlib, re, sys
+
+      root = pathlib.Path(".")
+      manifest = json.loads((root / "custom_components/twogis_friends/manifest.json").read_text())
+      hacs = json.loads((root / "hacs.json").read_text())
+
+      errors = []
+      for key in ("domain", "name", "version", "documentation", "issue_tracker", "codeowners"):
+          if key not in manifest:
+              errors.append(f"manifest.json: нет обязательного ключа {key!r}")
+      if not re.fullmatch(r"\d+\.\d+\.\d+", manifest.get("version", "")):
+          errors.append(f"manifest.json: version {manifest.get('version')!r} не вида X.Y.Z")
+      if "name" not in hacs:
+          errors.append("hacs.json: нет ключа 'name'")
+
+      import os
+      tag = os.environ.get("CI_COMMIT_TAG")
+      if tag:
+          # на релизе требования строже: ссылки должны быть настоящими,
+          # а версия — совпадать с тегом, иначе HACS поставит одно,
+          # а HA покажет другое
+          if "CHANGE_ME" in json.dumps(manifest):
+              errors.append("manifest.json: перед релизом заменить CHANGE_ME в ссылках")
+          if tag.lstrip("v") != manifest["version"]:
+              errors.append(f"тег {tag} не совпадает с manifest version {manifest['version']}")
+      elif "CHANGE_ME" in json.dumps(manifest):
+          print("ВНИМАНИЕ: в manifest.json остался CHANGE_ME — до релиза надо заменить")
+
+      for e in errors:
+          print("ОШИБКА:", e)
+      sys.exit(1 if errors else 0)
+      PY
+  rules:
+    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+
+validate:python:
+  stage: validate
+  script:
+    - python -m compileall -q custom_components
+  rules:
+    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+
+# --- зеркало ----------------------------------------------------------------
+#
+# Альтернатива без CI: Settings -> Repository -> Mirroring repositories ->
+# Push -> https://<user>:<PAT>@github.com/<owner>/<repo>.git
+# Встроенное push-зеркало есть в бесплатном GitLab и обычно проще этой job.
+# CI-вариант оставлен на случай self-hosted GitLab без доступа наружу у демона.
+
+mirror:github:
+  stage: mirror
+  script:
+    - test -n "$GITHUB_TOKEN" || { echo "нет GITHUB_TOKEN"; exit 1; }
+    - test -n "$GITHUB_REPO" || { echo "нет GITHUB_REPO"; exit 1; }
+    - git remote remove github 2>/dev/null || true
+    - git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    # пушим текущую ветку и все теги; --force-with-lease не годится,
+    # зеркало по определению следует за источником
+    - git push github "HEAD:refs/heads/${CI_DEFAULT_BRANCH}" --force
+    - git push github --tags --force
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# --- релиз на GitHub --------------------------------------------------------
+
+release:github:
+  stage: release
+  script:
+    - |
+      VERSION="${CI_COMMIT_TAG#v}"
+      BODY=$(jq -Rn --arg tag "$CI_COMMIT_TAG" --arg body "Установка через HACS как custom repository.
+
+      Изменения: $CI_COMMIT_TAG" \
+        '{tag_name:$tag, name:$tag, body:$body, draft:false, prerelease:false}')
+      echo "Создаю релиз $CI_COMMIT_TAG в $GITHUB_REPO"
+      HTTP=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
+        -X POST "https://api.github.com/repos/${GITHUB_REPO}/releases" \
+        -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        -d "$BODY")
+      cat /tmp/resp.json
+      test "$HTTP" = "201" || { echo "GitHub вернул $HTTP"; exit 1; }
+  rules:
+    - if: $CI_COMMIT_TAG

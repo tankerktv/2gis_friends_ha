@@ -1,0 +1,22 @@
+services:
+  2gis-friends-bridge:
+    build: .
+    container_name: 2gis-friends-bridge
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+    # Мосту нужен только исходящий HTTPS к 2gis и доступ к брокеру —
+    # порты наружу не публикуем.
+    healthcheck:
+      # процесс жив = мост работает; настоящее состояние видно по
+      # retained-топику 2gis/friends/bridge/status
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
