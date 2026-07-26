@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "2GIS Friends",
+        "description": "Open 2gis.ru, press F12 -> Network -> filter WS -> connection user/ws -> Headers -> Request URL, and copy the value of the token= parameter (40 hex characters).",
+        "data": {
+          "token": "Access token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Token expired",
+        "description": "The 2GIS token is no longer accepted. Grab a fresh one the same way and paste it below.",
+        "data": {
+          "token": "Access token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach 2GIS servers",
+      "invalid_auth": "Token rejected",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This 2GIS account is already set up",
+      "reauth_successful": "Token updated",
+      "wrong_account": "That token belongs to a different 2GIS account"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Coverage area",
+        "description": "2GIS only sends updates for friends inside a map viewport. The area is a square of this many degrees around your Home Assistant location (1 degree is roughly 111 km).",
+        "data": {
+          "viewport_radius": "Radius, degrees"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "last_seen": {
+        "name": "Last seen"
+      }
+    }
+  }
+}

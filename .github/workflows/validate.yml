@@ -1,0 +1,31 @@
+# Гоняется на зеркале в GitHub. Ловит ошибки манифеста и структуры до того,
+# как HACS попробует поставить релиз.
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # HACS и hassfest меняют требования, поэтому проверяемся и без коммитов
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # проверка на «бренд зарегистрирован в home-assistant/brands»
+          # нужна только для попадания в дефолтный стор HACS
+          ignore: brands
