@@ -1,0 +1,29 @@
+# GitLab Runner — агент, который выполняет CI-джобы.
+#
+# Важно понимать направление связи: GitLab НЕ ходит в раннер. Наоборот, раннер
+# сам долго-опрашивает GitLab (POST /api/v4/jobs/request) и забирает работу.
+# Поэтому он спокойно живёт за NAT, и никаких портов наружу открывать не нужно.
+#
+# Раннер сам джобы не выполняет — он их только получает и делегирует executor'у.
+# Здесь executor = docker: под каждую джобу поднимается свежий контейнер из
+# образа, указанного в .gitlab-ci.yml, и после выполнения выбрасывается.
+# Отсюда и монтирование docker.sock: раннеру нужен доступ к демону хоста,
+# чтобы эти контейнеры создавать.
+
+services:
+  gitlab-runner:
+    image: gitlab/gitlab-runner:alpine
+    container_name: gitlab-runner
+    restart: unless-stopped
+    volumes:
+      # config.toml — где раннер хранит свою личность и токен после register.
+      # Лежит на хосте, поэтому переживает пересоздание контейнера.
+      - ./config:/etc/gitlab-runner
+      # Доступ к докер-демону хоста для запуска контейнеров с джобами.
+      # Если Git Bash на Windows корёжит путь — пиши //var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
