@@ -3,10 +3,10 @@
   "name": "2GIS Friends",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://github.com/CHANGE_ME/twogis-friends-ha",
+  "documentation": "https://github.com/tankerktv/2gis_friends_ha",
   "integration_type": "hub",
   "iot_class": "cloud_push",
-  "issue_tracker": "https://github.com/CHANGE_ME/twogis-friends-ha/issues",
+  "issue_tracker": "https://github.com/tankerktv/2gis_friends_ha/issues",
   "requirements": [],
   "version": "0.1.0"
 }

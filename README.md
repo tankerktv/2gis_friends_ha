@@ -29,18 +29,18 @@ HACS умеет ставить **только с GitHub** — он ходит ч
 в нём нет. Поэтому: GitLab остаётся источником, GitHub — зеркалом (см. ниже).
 
 1. HACS → Integrations → ⋮ → Custom repositories
-2. URL зеркала на GitHub, категория **Integration**
+2. URL `https://github.com/tankerktv/2gis_friends_ha`, категория **Integration**
 3. Найти «2GIS Friends» → Download
 4. Перезапустить HA
 5. Настройки → Устройства и службы → Добавить интеграцию → «2GIS Friends»
 
-### Без HACS, прямо из GitLab
+### Без HACS
 
 HACS для установки не обязателен — интеграция это просто папка:
 
 ```bash
 cd /config
-git clone https://gitlab.com/<owner>/<repo>.git /tmp/twogis
+git clone https://github.com/tankerktv/2gis_friends_ha.git /tmp/twogis
 mkdir -p custom_components
 cp -r /tmp/twogis/custom_components/twogis_friends custom_components/
 ```
@@ -139,13 +139,14 @@ git tag v0.1.1 && git push origin v0.1.1
 **Версия в `manifest.json` обязана совпадать с тегом** — пайплайн падает, если
 разошлись. Иначе HACS поставит одно, а HA покажет другое.
 
-### Перед первым запуском
+### Перед включением зеркала
 
-В `custom_components/twogis_friends/manifest.json` заменить `CHANGE_ME` в
-`documentation` и `issue_tracker` на адрес зеркала — иначе `validate` не пройдёт,
-и HACS будет ругаться.
+> **Внимание.** Зеркало всегда следует за источником и перезапишет GitHub тем,
+> что лежит в GitLab. Включать его можно только когда история в GitLab совпадает
+> с той, что уехала в GitHub, — иначе публичный репозиторий откатится к более
+> старому состоянию.
 
-На GitHub-зеркале работает [.github/workflows/validate.yml](.github/workflows/validate.yml):
+На GitHub работает [.github/workflows/validate.yml](.github/workflows/validate.yml):
 hassfest и HACS Action ловят ошибки структуры до установки.
 
 ---
