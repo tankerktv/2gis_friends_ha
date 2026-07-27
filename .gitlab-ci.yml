@@ -1,13 +1,22 @@
 # GitLab — источник истины. GitHub нужен только потому, что HACS умеет ходить
-# исключительно в него: ставит из GitHub Releases (или из ветки по умолчанию,
-# если релизов нет).
+# исключительно в него.
 #
-# Переменные проекта (Settings -> CI/CD -> Variables), обе Masked:
-#   GITHUB_TOKEN  — PAT на github.com со scope `repo` (classic) либо
-#                   fine-grained с правами Contents: read/write
-#   GITHUB_REPO   — owner/repo, например tanker/twogis-friends-ha
+# Схема веток:
+#   development — рабочая, ветка по умолчанию, НЕ зеркалируется
+#   public      — то, что опубликовано; пушится в GitHub как main
 #
-# Ветка отзеркаливается на каждый push, релиз создаётся на каждый тег vX.Y.Z.
+# Публикация = слить development в public и запушить public.
+# Релиз       = поставить тег vX.Y.Z на public.
+#
+# Переменные проекта (Settings -> CI/CD -> Variables):
+#   GITHUB_TOKEN — PAT github.com, scope `repo`. Обязательно Masked.
+#   GITHUB_REPO  — необязательна, по умолчанию берётся значение ниже.
+
+variables:
+  GITHUB_REPO: "tankerktv/2gis_friends_ha"
+  # ветка, в которую пушим на стороне GitHub (её ждёт HACS)
+  GITHUB_BRANCH: "main"
+  PUBLIC_BRANCH: "public"
 
 stages: [validate, mirror, release]
 
@@ -23,7 +32,7 @@ validate:manifest:
   script:
     - |
       python - <<'PY'
-      import json, pathlib, re, sys
+      import json, os, pathlib, re, sys
 
       root = pathlib.Path(".")
       manifest = json.loads((root / "custom_components/twogis_friends/manifest.json").read_text())
@@ -38,53 +47,51 @@ validate:manifest:
       if "name" not in hacs:
           errors.append("hacs.json: нет ключа 'name'")
 
-      import os
       tag = os.environ.get("CI_COMMIT_TAG")
       if tag:
-          # на релизе требования строже: ссылки должны быть настоящими,
-          # а версия — совпадать с тегом, иначе HACS поставит одно,
-          # а HA покажет другое
+          # на релизе требования строже: версия обязана совпадать с тегом,
+          # иначе HACS поставит одно, а HA покажет другое
           if "CHANGE_ME" in json.dumps(manifest):
               errors.append("manifest.json: перед релизом заменить CHANGE_ME в ссылках")
           if tag.lstrip("v") != manifest["version"]:
               errors.append(f"тег {tag} не совпадает с manifest version {manifest['version']}")
-      elif "CHANGE_ME" in json.dumps(manifest):
-          print("ВНИМАНИЕ: в manifest.json остался CHANGE_ME — до релиза надо заменить")
 
       for e in errors:
           print("ОШИБКА:", e)
       sys.exit(1 if errors else 0)
       PY
-  rules:
-    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
 
 validate:python:
   stage: validate
   script:
-    - python -m compileall -q custom_components
-  rules:
-    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+    - python -m compileall -q custom_components bridge tools
 
 # --- зеркало ----------------------------------------------------------------
-#
-# Альтернатива без CI: Settings -> Repository -> Mirroring repositories ->
-# Push -> https://<user>:<PAT>@github.com/<owner>/<repo>.git
-# Встроенное push-зеркало есть в бесплатном GitLab и обычно проще этой job.
-# CI-вариант оставлен на случай self-hosted GitLab без доступа наружу у демона.
 
 mirror:github:
   stage: mirror
   script:
-    - test -n "$GITHUB_TOKEN" || { echo "нет GITHUB_TOKEN"; exit 1; }
-    - test -n "$GITHUB_REPO" || { echo "нет GITHUB_REPO"; exit 1; }
+    - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
+    - git config user.email "ci@gitlab"
+    - git config user.name "GitLab CI"
+    # Подмена README для публичной стороны. Пока README.public.md нет —
+    # шаг ничего не делает, и ветки остаются идентичными.
+    - |
+      if [ -f README.public.md ]; then
+        echo "подменяю README.md на README.public.md"
+        mv README.public.md README.md
+        git add -A
+        git commit -q -m "README для публичной версии [ci skip]"
+      fi
     - git remote remove github 2>/dev/null || true
     - git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
-    # пушим текущую ветку и все теги; --force-with-lease не годится,
-    # зеркало по определению следует за источником
-    - git push github "HEAD:refs/heads/${CI_DEFAULT_BRANCH}" --force
+    # --force осознанно: зеркало по определению следует за источником
+    - git push github "HEAD:refs/heads/${GITHUB_BRANCH}" --force
     - git push github --tags --force
+    - echo "опубликовано в https://github.com/${GITHUB_REPO}/tree/${GITHUB_BRANCH}"
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # ЗЕРКАЛИТСЯ ТОЛЬКО public. development сюда не попадает никогда.
+    - if: $CI_COMMIT_BRANCH == $PUBLIC_BRANCH
     - if: $CI_COMMIT_TAG
 
 # --- релиз на GitHub --------------------------------------------------------
@@ -92,13 +99,11 @@ mirror:github:
 release:github:
   stage: release
   script:
+    - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
     - |
-      VERSION="${CI_COMMIT_TAG#v}"
-      BODY=$(jq -Rn --arg tag "$CI_COMMIT_TAG" --arg body "Установка через HACS как custom repository.
-
-      Изменения: $CI_COMMIT_TAG" \
+      BODY=$(jq -Rn --arg tag "$CI_COMMIT_TAG" \
+        --arg body "Установка через HACS: Custom repositories -> https://github.com/${GITHUB_REPO} -> Integration" \
         '{tag_name:$tag, name:$tag, body:$body, draft:false, prerelease:false}')
-      echo "Создаю релиз $CI_COMMIT_TAG в $GITHUB_REPO"
       HTTP=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
         -X POST "https://api.github.com/repos/${GITHUB_REPO}/releases" \
         -H "Authorization: Bearer ${GITHUB_TOKEN}" \
