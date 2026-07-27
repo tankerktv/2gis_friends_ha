@@ -23,3 +23,6 @@ venv/
 login*.har
 login*.json
 clean_test.json
+
+# GitLab Runner: конфиг содержит токен
+runner/config/
