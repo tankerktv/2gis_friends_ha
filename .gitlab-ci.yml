@@ -2,11 +2,11 @@
 # исключительно в него.
 #
 # Схема веток:
-#   development — рабочая, ветка по умолчанию, НЕ зеркалируется
-#   public      — то, что опубликовано; пушится в GitHub как main
+#   development — рабочая, НЕ зеркалируется
+#   main        — то, что опубликовано; один в один уезжает в GitHub
 #
-# Публикация = слить development в public и запушить public.
-# Релиз       = поставить тег vX.Y.Z на public.
+# Публикация = слить development в main и запушить main.
+# Релиз      = поставить тег vX.Y.Z на main.
 #
 # Переменные проекта (Settings -> CI/CD -> Variables):
 #   GITHUB_TOKEN — PAT github.com, scope `repo`. Обязательно Masked.
@@ -14,9 +14,9 @@
 
 variables:
   GITHUB_REPO: "tankerktv/2gis_friends_ha"
-  # ветка, в которую пушим на стороне GitHub (её ждёт HACS)
-  GITHUB_BRANCH: "main"
-  PUBLIC_BRANCH: "public"
+  # Публикуемая ветка называется одинаково с обеих сторон — переименовывать
+  # при пуше не нужно, и схема остаётся симметричной.
+  PUBLIC_BRANCH: "main"
 
 stages: [validate, mirror, release]
 
@@ -86,11 +86,11 @@ mirror:github:
     - git remote remove github 2>/dev/null || true
     - git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
     # --force осознанно: зеркало по определению следует за источником
-    - git push github "HEAD:refs/heads/${GITHUB_BRANCH}" --force
+    - git push github "HEAD:refs/heads/${PUBLIC_BRANCH}" --force
     - git push github --tags --force
-    - echo "опубликовано в https://github.com/${GITHUB_REPO}/tree/${GITHUB_BRANCH}"
+    - echo "опубликовано в https://github.com/${GITHUB_REPO}/tree/${PUBLIC_BRANCH}"
   rules:
-    # ЗЕРКАЛИТСЯ ТОЛЬКО public. development сюда не попадает никогда.
+    # ЗЕРКАЛИТСЯ ТОЛЬКО main. development сюда не попадает никогда.
     - if: $CI_COMMIT_BRANCH == $PUBLIC_BRANCH
     - if: $CI_COMMIT_TAG
 
