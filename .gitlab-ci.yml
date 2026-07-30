@@ -57,6 +57,10 @@ validate:manifest:
       if "name" not in hacs:
           errors.append("hacs.json: нет ключа 'name'")
 
+      # HACS проверяет наличие лицензии, и отключить эту проверку нельзя
+      if not any((root / n).exists() for n in ("LICENSE", "LICENSE.md", "LICENSE.txt")):
+          errors.append("нет файла LICENSE — валидация HACS этого не прощает")
+
       tag = os.environ.get("CI_COMMIT_TAG")
       if tag:
           # на релизе требования строже: версия обязана совпадать с тегом,
