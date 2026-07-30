@@ -73,11 +73,13 @@ class ZondClient:
         token: str,
         viewport: Viewport,
         on_positions: Callable[[Iterable[FriendPosition]], None],
+        idle_timeout: float = IDLE_TIMEOUT,
     ) -> None:
         self._session = session
         self._token = token
         self._viewport = viewport
         self._on_positions = on_positions
+        self._idle_timeout = idle_timeout
         self._parser = ZondParser()
         self._last_rx = 0.0
         self.connected = False
@@ -106,6 +108,12 @@ class ZondClient:
                 _LOGGER.warning("Handshake отклонён: HTTP %s", err.status)
             except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as err:
                 _LOGGER.warning("Обрыв связи с zond: %s: %s", type(err).__name__, err)
+            except Exception:  # noqa: BLE001
+                # Ловим всё остальное осознанно. Если сюда прилетит незнакомое
+                # исключение и мы его выпустим, цикл переподключения прекратится,
+                # фоновая задача завершится, и интеграция замрёт до перезапуска
+                # Home Assistant: сущности останутся, а обновлений не будет.
+                _LOGGER.exception("Непредвиденная ошибка в сессии zond, переподключаюсь")
             finally:
                 self.connected = False
 
@@ -179,9 +187,9 @@ class ZondClient:
     async def _idle_watchdog(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         """Рвём «полузакрытое» соединение: TCP жив, а данные не идут."""
         while True:
-            await asyncio.sleep(IDLE_TIMEOUT / 3)
+            await asyncio.sleep(self._idle_timeout / 3)
             idle = time.monotonic() - self._last_rx
-            if idle > IDLE_TIMEOUT:
+            if idle > self._idle_timeout:
                 _LOGGER.warning("Нет входящих %.0f с — переподключаюсь", idle)
                 await ws.close()
                 return
