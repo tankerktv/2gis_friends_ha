@@ -66,7 +66,10 @@ git push origin v0.1.1
 **Версия в манифесте обязана совпадать с тегом** — job `validate:manifest`
 падает, если разошлись. Иначе HACS поставит одно, а HA покажет другое.
 
-Тег запускает `release:github`, который создаёт GitHub Release.
+Тег уезжает в GitHub через `mirror:github`, а сам Release создаёт уже
+**GitHub Actions** — `.github/workflows/release.yml`. Сделано так потому, что
+там токен выдаётся job'у автоматически и PAT не нужен. Создавать релиз с двух
+сторон нельзя: второй получит `422 Release already exists`.
 
 ## Отдельный README для публики
 
