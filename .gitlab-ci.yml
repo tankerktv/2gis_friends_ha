@@ -8,8 +8,13 @@
 # Публикация = слить development в main и запушить main.
 # Релиз      = поставить тег vX.Y.Z на main.
 #
+# Релизы GitHub здесь НЕ создаются: это делает .github/workflows/release.yml
+# на стороне GitHub, где токен выдаётся job'у автоматически. Дублировать
+# создание релиза с двух сторон нельзя — второй получит 422 и покрасит пайплайн.
+#
 # Переменные проекта (Settings -> CI/CD -> Variables):
-#   GITHUB_TOKEN — PAT github.com, scope `repo`. Обязательно Masked.
+#   GITHUB_TOKEN — fine-grained PAT, Contents: read/write на репозиторий-зеркало.
+#                  Masked, без Protect (иначе не виден пайплайнам на тегах).
 #   GITHUB_REPO  — необязательна, по умолчанию берётся значение ниже.
 
 variables:
@@ -18,7 +23,7 @@ variables:
   # при пуше не нужно, и схема остаётся симметричной.
   PUBLIC_BRANCH: "main"
 
-stages: [validate, mirror, release]
+stages: [validate, mirror]
 
 default:
   image: python:3.12-alpine
@@ -92,24 +97,4 @@ mirror:github:
   rules:
     # ЗЕРКАЛИТСЯ ТОЛЬКО main. development сюда не попадает никогда.
     - if: $CI_COMMIT_BRANCH == $PUBLIC_BRANCH
-    - if: $CI_COMMIT_TAG
-
-# --- релиз на GitHub --------------------------------------------------------
-
-release:github:
-  stage: release
-  script:
-    - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
-    - |
-      BODY=$(jq -Rn --arg tag "$CI_COMMIT_TAG" \
-        --arg body "Установка через HACS: Custom repositories -> https://github.com/${GITHUB_REPO} -> Integration" \
-        '{tag_name:$tag, name:$tag, body:$body, draft:false, prerelease:false}')
-      HTTP=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
-        -X POST "https://api.github.com/repos/${GITHUB_REPO}/releases" \
-        -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github+json" \
-        -d "$BODY")
-      cat /tmp/resp.json
-      test "$HTTP" = "201" || { echo "GitHub вернул $HTTP"; exit 1; }
-  rules:
     - if: $CI_COMMIT_TAG
