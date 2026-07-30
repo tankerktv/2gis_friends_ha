@@ -95,8 +95,6 @@ class Config:
     token: TokenConfig = field(default_factory=TokenConfig)
     log_level: str = field(default_factory=lambda: _env("LOG_LEVEL", "INFO"))
     log_frames: bool = field(default_factory=lambda: _bool("LOG_FRAMES", False))
-    # состояние друга считается протухшим после N секунд без апдейта
-    stale_after: float = field(default_factory=lambda: _float("STALE_AFTER", 900.0))
 
 
 def load() -> Config:
