@@ -14,7 +14,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_IDLE_RECONNECT_MIN,
     CONF_VIEWPORT_RADIUS,
+    DEFAULT_IDLE_RECONNECT_MIN,
     DEFAULT_VIEWPORT_RADIUS,
     DOMAIN,
     FIRST_DATA_TIMEOUT,
@@ -41,12 +43,14 @@ class TwoGisCoordinator(DataUpdateCoordinator[dict[str, FriendPosition]]):
         self._task: asyncio.Task | None = None
 
         radius = entry.options.get(CONF_VIEWPORT_RADIUS, DEFAULT_VIEWPORT_RADIUS)
+        idle_min = entry.options.get(CONF_IDLE_RECONNECT_MIN, DEFAULT_IDLE_RECONNECT_MIN)
         viewport = Viewport(hass.config.latitude, hass.config.longitude, radius)
         self.client = ZondClient(
             async_get_clientsession(hass),
             entry.data[CONF_TOKEN],
             viewport,
             self._handle_positions,
+            idle_timeout=float(idle_min) * 60,
         )
 
     @callback
@@ -85,15 +89,26 @@ class TwoGisCoordinator(DataUpdateCoordinator[dict[str, FriendPosition]]):
             ) from err
 
     async def _runner(self) -> None:
-        try:
-            await self.client.run()
-        except ZondAuthError as err:
-            _LOGGER.error("Токен 2ГИС отвергнут: %s", err)
-            self.config_entry.async_start_reauth(self.hass)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 — фоновая задача не должна падать молча
-            _LOGGER.exception("WS-клиент 2ГИС остановился с ошибкой")
+        """Держит клиент живым до выгрузки записи.
+
+        Второй рубеж защиты: даже если run() почему-то вернулся или упал,
+        задача не должна завершаться молча — иначе интеграция замрёт с уже
+        созданными сущностями, но без обновлений, и это никак не проявится
+        в интерфейсе.
+        """
+        while True:
+            try:
+                await self.client.run()
+                _LOGGER.warning("Клиент zond неожиданно завершился, перезапускаю")
+            except ZondAuthError as err:
+                _LOGGER.error("Токен 2ГИС отвергнут: %s", err)
+                self.config_entry.async_start_reauth(self.hass)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("WS-клиент 2ГИС упал, перезапускаю через 60 с")
+            await asyncio.sleep(60)
 
     async def async_shutdown(self) -> None:
         if self._task is not None:
