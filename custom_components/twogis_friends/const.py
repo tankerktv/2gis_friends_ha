@@ -31,6 +31,9 @@ FIRST_DATA_TIMEOUT: Final = 45.0
 
 # --- опции ------------------------------------------------------------------
 CONF_VIEWPORT_RADIUS: Final = "viewport_radius"
+#: сколько минут без входящих данных считать поводом пересоздать соединение
+CONF_IDLE_RECONNECT_MIN: Final = "idle_reconnect_min"
+DEFAULT_IDLE_RECONNECT_MIN: Final = 15.0
 # Сервер отдаёт апдейты только по друзьям внутри рамки, поэтому берём с запасом.
 DEFAULT_VIEWPORT_RADIUS: Final = 2.0   # градусы вокруг координат HA
 VIEWPORT_ZOOM: Final = 11

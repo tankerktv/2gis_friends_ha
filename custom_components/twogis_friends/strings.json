@@ -31,9 +31,10 @@
     "step": {
       "init": {
         "title": "Coverage area",
-        "description": "2GIS only sends updates for friends inside a map viewport. The area is a square of this many degrees around your Home Assistant location (1 degree is roughly 111 km).",
+        "description": "2GIS only sends updates for friends inside a map viewport. The area is a square of this many degrees around your Home Assistant location (1 degree is roughly 111 km).\n\nData arrives over a push connection, so there is no polling interval. If nothing arrives for the time below, the connection is torn down and recreated.",
         "data": {
-          "viewport_radius": "Radius, degrees"
+          "viewport_radius": "Radius, degrees",
+          "idle_reconnect_min": "Reconnect after silence, minutes"
         }
       }
     }
