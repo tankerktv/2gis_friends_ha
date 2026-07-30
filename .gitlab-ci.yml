@@ -44,9 +44,14 @@ validate:manifest:
       hacs = json.loads((root / "hacs.json").read_text())
 
       errors = []
+      # HACS требует, чтобы эти ключи были не просто объявлены, а непустыми.
+      # Проверка только на наличие пропустила codeowners: [] и валидация HACS
+      # падала на уже опубликованном релизе.
       for key in ("domain", "name", "version", "documentation", "issue_tracker", "codeowners"):
           if key not in manifest:
               errors.append(f"manifest.json: нет обязательного ключа {key!r}")
+          elif not manifest[key]:
+              errors.append(f"manifest.json: ключ {key!r} пустой, HACS такое не принимает")
       if not re.fullmatch(r"\d+\.\d+\.\d+", manifest.get("version", "")):
           errors.append(f"manifest.json: version {manifest.get('version')!r} не вида X.Y.Z")
       if "name" not in hacs:
