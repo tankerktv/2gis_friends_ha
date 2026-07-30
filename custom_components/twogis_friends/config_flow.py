@@ -28,7 +28,9 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_IDLE_RECONNECT_MIN,
     CONF_VIEWPORT_RADIUS,
+    DEFAULT_IDLE_RECONNECT_MIN,
     DEFAULT_VIEWPORT_RADIUS,
     DOMAIN,
 )
@@ -131,13 +133,23 @@ class TwoGisOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(data=user_input)
 
-        current = self.config_entry.options.get(
-            CONF_VIEWPORT_RADIUS, DEFAULT_VIEWPORT_RADIUS
-        )
+        options = self.config_entry.options
         schema = vol.Schema({
-            vol.Required(CONF_VIEWPORT_RADIUS, default=current): NumberSelector(
+            vol.Required(
+                CONF_VIEWPORT_RADIUS,
+                default=options.get(CONF_VIEWPORT_RADIUS, DEFAULT_VIEWPORT_RADIUS),
+            ): NumberSelector(
                 NumberSelectorConfig(
                     min=0.1, max=20.0, step=0.1, mode=NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
+                CONF_IDLE_RECONNECT_MIN,
+                default=options.get(CONF_IDLE_RECONNECT_MIN, DEFAULT_IDLE_RECONNECT_MIN),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=2, max=120, step=1, mode=NumberSelectorMode.BOX,
+                    unit_of_measurement="мин",
                 )
             ),
         })
