@@ -1,7 +1,9 @@
 {
   "domain": "twogis_friends",
   "name": "2GIS Friends",
-  "codeowners": [],
+  "codeowners": [
+    "@tankerktv"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/tankerktv/2gis_friends_ha",
   "integration_type": "hub",
