@@ -22,10 +22,11 @@ jobs:
     name: HACS
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout здесь не нужен: hacs/action забирает репозиторий
+      # через GitHub API, а не с диска раннера
       - uses: hacs/action@main
         with:
           category: integration
-          # проверка на «бренд зарегистрирован в home-assistant/brands»
+          # brands — проверка регистрации бренда в home-assistant/brands,
           # нужна только для попадания в дефолтный стор HACS
           ignore: brands
