@@ -125,3 +125,50 @@ automation:
             От Alex нет обновлений с
             {{ states('sensor.alex_axel_last_seen') | as_datetime | as_local }}
 ```
+
+## Подсветить друзей с устаревшими координатами
+
+2ГИС при `movement: noGeo` продолжает отдавать **последнюю известную** точку —
+наблюдали расхождение почти в два часа. На карте такой друг выглядит стоящим
+на месте прямо сейчас, поэтому свежесть стоит выводить явно.
+
+Шаблонный сенсор «сколько минут назад обновлялось»:
+
+```yaml
+template:
+  - sensor:
+      - name: "Alex давность"
+        unique_id: 2gis_alex_age
+        unit_of_measurement: min
+        state: >-
+          {{ ((now() - states('sensor.alex_axel_last_seen') | as_datetime).total_seconds() / 60) | round(0) }}
+        attributes:
+          stale: >-
+            {{ state_attr('device_tracker.alex_axel', 'movement') == 'noGeo' }}
+```
+
+Карточка, где давность видна рядом с точкой:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: map
+    entities:
+      - device_tracker.alex_axel
+    hours_to_show: 12
+    auto_fit: true
+  - type: markdown
+    content: >-
+      {% set mv = state_attr('device_tracker.alex_axel', 'movement') %}
+      {% set age = ((now() - states('sensor.alex_axel_last_seen') | as_datetime).total_seconds() / 60) | round(0) %}
+      {% if mv == 'noGeo' %}
+      ⚠️ **Геоданные не приходят.** Последняя точка {{ age }} мин назад.
+      {% else %}
+      ✅ Обновлено {{ age }} мин назад ({{ mv }}).
+      {% endif %}
+```
+
+Значения `movement`, которые наблюдались: `stopped` и `noGeo`. Как называется
+состояние «в движении», пока неизвестно — за все прогоны друзья не двигались.
+Поэтому условие лучше писать на `== 'noGeo'`, а не перечислять «хорошие»
+статусы: неизвестное значение тогда не будет ошибочно считаться проблемой.
