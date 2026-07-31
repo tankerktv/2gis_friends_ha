@@ -22,7 +22,7 @@ jobs:
       - name: Проверить, что версия в манифесте совпадает с тегом
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          VERSION=$(python -c "import json;print(json.load(open('custom_components/twogis_friends/manifest.json'))['version'])")
+          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/twogis_friends/manifest.json'))['version'])")
           echo "тег: $TAG, manifest: $VERSION"
           if [ "$TAG" != "$VERSION" ]; then
             echo "::error::версия в manifest.json ($VERSION) не совпадает с тегом ($TAG)"
