@@ -69,6 +69,13 @@ validate:manifest:
               errors.append("manifest.json: перед релизом заменить CHANGE_ME в ссылках")
           if tag.lstrip("v") != manifest["version"]:
               errors.append(f"тег {tag} не совпадает с manifest version {manifest['version']}")
+          # Описание релиза собирается из CHANGELOG, поэтому без раздела
+          # релиз уехал бы с пустым текстом.
+          changelog = (root / "CHANGELOG.md")
+          if not changelog.exists():
+              errors.append("нет CHANGELOG.md")
+          elif f"## [{tag.lstrip('v')}]" not in changelog.read_text(encoding="utf-8"):
+              errors.append(f"в CHANGELOG.md нет раздела '## [{tag.lstrip('v')}]'")
 
       for e in errors:
           print("ОШИБКА:", e)
