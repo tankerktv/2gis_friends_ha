@@ -30,10 +30,15 @@ jobs:
             exit 1
           fi
 
+      - name: Собрать описание из CHANGELOG
+        run: python3 tools/changelog_section.py "$GITHUB_REF_NAME" > /tmp/notes.md
+
       - name: Создать релиз
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Описание берём из CHANGELOG.md, а не из --generate-notes:
+          # список коммитов человеку читать неудобно.
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --notes-file /tmp/notes.md
