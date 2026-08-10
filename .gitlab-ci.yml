@@ -91,6 +91,12 @@ validate:python:
 
 mirror:github:
   stage: mirror
+  variables:
+    # Полная история. По умолчанию раннер клонирует последние 20 коммитов,
+    # а теги указывают на более старые: git не может отправить объекты,
+    # которых у него нет, и `push --tags` падает с
+    # "did not receive expected object ... remote unpack failed".
+    GIT_DEPTH: "0"
   script:
     - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
     - apk add --no-cache bash >/dev/null
