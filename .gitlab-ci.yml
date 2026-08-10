@@ -93,21 +93,12 @@ mirror:github:
   stage: mirror
   script:
     - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
-    - git config user.email "ci@gitlab"
-    - git config user.name "GitLab CI"
-    # Подмена README для публичной стороны. Пока README.public.md нет —
-    # шаг ничего не делает, и ветки остаются идентичными.
-    - |
-      if [ -f README.public.md ]; then
-        echo "подменяю README.md на README.public.md"
-        mv README.public.md README.md
-        git add -A
-        git commit -q -m "README для публичной версии [ci skip]"
-      fi
+    - apk add --no-cache bash >/dev/null
     - git remote remove github 2>/dev/null || true
     - git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
-    # --force осознанно: зеркало по определению следует за источником
-    - git push github "HEAD:refs/heads/${PUBLIC_BRANCH}" --force
+    # Правила преобразования живут в скрипте, а не здесь: он же вызывается
+    # вручную, и дублировать их в двух местах — верный способ разъехаться.
+    - PUBLISH_REMOTE=github PUBLISH_BRANCH="$PUBLIC_BRANCH" bash tools/publish_github.sh
     - git push github --tags --force
     - echo "опубликовано в https://github.com/${GITHUB_REPO}/tree/${PUBLIC_BRANCH}"
   rules:

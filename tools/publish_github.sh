@@ -13,8 +13,12 @@
 #
 # GitLab остаётся полным: там и подробный README, и docs/.
 #
-# Работа идёт в отдельном git worktree, поэтому рабочий каталог не трогается
-# и переключать ветки не нужно.
+# Один и тот же скрипт вызывается вручную и из CI, чтобы правила преобразования
+# не разъезжались. Отличается только способ подготовки дерева:
+#
+#   локально — отдельный git worktree, рабочий каталог не трогается;
+#   в CI     — прямо в одноразовом checkout'е (worktree там не поднять,
+#              клон поверхностный и нужной ветки локально может не быть).
 
 set -euo pipefail
 
@@ -22,16 +26,8 @@ REMOTE="${PUBLISH_REMOTE:-github}"
 BRANCH="${PUBLISH_BRANCH:-main}"
 SOURCE="${1:-$BRANCH}"
 
-WT="$(mktemp -d)"
-cleanup() { git worktree remove --force "$WT" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
-
-echo "готовлю публичную версию из '$SOURCE'"
-git worktree add --detach "$WT" "$SOURCE" >/dev/null
-
-(
-  cd "$WT"
-
+# Готовит публичный вид в текущем каталоге и коммитит отличия.
+transform() {
   if [ -f README.public.md ]; then
     mv -f README.public.md README.md
     echo "  README заменён на публичный"
@@ -51,7 +47,24 @@ git worktree add --detach "$WT" "$SOURCE" >/dev/null
     git -c user.name="publish" -c user.email="publish@local" \
         commit -q -m "Публичная версия: README для пользователей, без docs"
   fi
+}
 
+if [ -n "${CI:-}" ]; then
+  echo "режим CI: преобразую текущий checkout"
+  transform
   echo "публикую в $REMOTE/$BRANCH"
   git push "$REMOTE" "HEAD:refs/heads/$BRANCH" --force
-)
+else
+  echo "готовлю публичную версию из '$SOURCE'"
+  WT="$(mktemp -d)"
+  cleanup() { git worktree remove --force "$WT" >/dev/null 2>&1 || true; }
+  trap cleanup EXIT
+
+  git worktree add --detach "$WT" "$SOURCE" >/dev/null
+  (
+    cd "$WT"
+    transform
+    echo "публикую в $REMOTE/$BRANCH"
+    git push "$REMOTE" "HEAD:refs/heads/$BRANCH" --force
+  )
+fi
