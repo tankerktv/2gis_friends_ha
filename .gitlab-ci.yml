@@ -100,12 +100,15 @@ mirror:github:
   script:
     - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
     - apk add --no-cache bash >/dev/null
+    # Вырезает docs/ из истории перед публикацией — см. комментарий в скрипте.
+    - pip install --quiet --disable-pip-version-check git-filter-repo
     - git remote remove github 2>/dev/null || true
     - git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
     # Правила преобразования живут в скрипте, а не здесь: он же вызывается
     # вручную, и дублировать их в двух местах — верный способ разъехаться.
+    # Теги он тоже публикует сам — из отфильтрованной истории, иначе они
+    # указывали бы на коммиты с docs/.
     - PUBLISH_REMOTE=github PUBLISH_BRANCH="$PUBLIC_BRANCH" bash tools/publish_github.sh
-    - git push github --tags --force
     - echo "опубликовано в https://github.com/${GITHUB_REPO}/tree/${PUBLIC_BRANCH}"
   rules:
     # ЗЕРКАЛИТСЯ ТОЛЬКО main. development сюда не попадает никогда.
