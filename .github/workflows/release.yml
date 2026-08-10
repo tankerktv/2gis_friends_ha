@@ -39,6 +39,17 @@ jobs:
         run: |
           # Описание берём из CHANGELOG.md, а не из --generate-notes:
           # список коммитов человеку читать неудобно.
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file /tmp/notes.md
+          #
+          # Тег может приехать повторно: например, когда история публичного
+          # зеркала переписывается и теги сдвигаются на новые коммиты.
+          # Тогда релиз уже существует, и `create` упал бы. Обновляем.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "релиз $GITHUB_REF_NAME уже есть — обновляю описание"
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file /tmp/notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file /tmp/notes.md
+          fi
