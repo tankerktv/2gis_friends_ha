@@ -24,9 +24,9 @@ jobs:
     steps:
       # actions/checkout здесь не нужен: hacs/action забирает репозиторий
       # через GitHub API, а не с диска раннера
+      # brands не отключаем: для попадания в дефолтный стор HACS эта проверка
+      # обязана проходить. С Home Assistant 2026.3 её должен закрывать
+      # собственный каталог brand/ внутри интеграции.
       - uses: hacs/action@main
         with:
           category: integration
-          # brands — проверка регистрации бренда в home-assistant/brands,
-          # нужна только для попадания в дефолтный стор HACS
-          ignore: brands
