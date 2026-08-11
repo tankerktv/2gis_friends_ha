@@ -1,0 +1,339 @@
+"""Тесты разбора фреймов zond.
+
+Это самое ценное место для тестов во всём проекте. Протокол не документирован
+и разобран наблюдением, поэтому 2ГИС вправе его менять. Ломается такое молча:
+парсер вернёт пустой список, координатор не получит позиций, а в Home Assistant
+это выглядит как «друзья перестали двигаться» — без единой ошибки в журнале.
+
+Координаты в тестах намеренно вымышленные (Красная площадь и круглые числа).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from twogis_friends.models import (
+    FriendPosition,
+    ZondParser,
+    _battery_percent,
+    _num,
+    _to_datetime,
+    _valid_coords,
+)
+
+MOSCOW_LAT = 55.7539
+MOSCOW_LON = 37.6208
+
+
+def make_state(friend_id="f1", lat=MOSCOW_LAT, lon=MOSCOW_LON, **extra):
+    """Собирает элемент states[] в том виде, в каком его шлёт zond."""
+    state = {
+        "id": friend_id,
+        "location": {"lat": lat, "lon": lon},
+    }
+    state.update(extra)
+    return state
+
+
+# --- вспомогательные функции ------------------------------------------------
+
+
+class TestNum:
+    def test_числа_проходят(self):
+        assert _num(5) == 5.0
+        assert _num(3.5) == 3.5
+        assert _num(-1) == -1.0
+
+    def test_строки_разбираются(self):
+        assert _num("42") == 42.0
+        assert _num("  3.5 ") == 3.5
+
+    def test_мусор_даёт_none(self):
+        assert _num("не число") is None
+        assert _num(None) is None
+        assert _num([1]) is None
+        assert _num({}) is None
+
+    def test_bool_не_число(self):
+        """В Python bool наследует int, и True прошёл бы как 1.0.
+
+        Для нас это важно: battery.isCharging — булево, и если бы оно
+        просочилось в числовой разбор, заряд «True» стал бы 100 процентами.
+        """
+        assert _num(True) is None
+        assert _num(False) is None
+
+
+class TestBatteryPercent:
+    def test_доля_переводится_в_проценты(self):
+        """zond отдаёт 0..1, а Home Assistant ждёт 0..100."""
+        assert _battery_percent(0.53) == 53
+        assert _battery_percent(0.0) == 0
+        assert _battery_percent(1.0) == 100
+
+    def test_готовые_проценты_не_трогаются(self):
+        assert _battery_percent(53) == 53
+        assert _battery_percent(87) == 87
+
+    def test_выход_за_границы_обрезается(self):
+        assert _battery_percent(150) == 100
+        assert _battery_percent(-20) == 0
+
+    def test_округление(self):
+        assert _battery_percent(0.535) == 54  # 53.5 -> 54
+        assert _battery_percent(0.534) == 53
+
+    def test_нет_данных(self):
+        assert _battery_percent(None) is None
+        assert _battery_percent("нет") is None
+
+
+class TestToDatetime:
+    def test_миллисекунды(self):
+        """lastSeen приходит в unix-миллисекундах."""
+        result = _to_datetime(1_700_000_000_000)
+        assert result == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+
+    def test_секунды_тоже_понимаются(self):
+        result = _to_datetime(1_700_000_000)
+        assert result == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+
+    def test_всегда_с_часовым_поясом(self):
+        """Наивное время в Home Assistant приводит к сдвигам истории."""
+        assert _to_datetime(1_700_000_000_000).tzinfo is timezone.utc
+
+    def test_мусор_не_роняет(self):
+        assert _to_datetime(None) is None
+        assert _to_datetime("вчера") is None
+        assert _to_datetime(10 ** 20) is None
+
+
+class TestValidCoords:
+    def test_нормальные(self):
+        assert _valid_coords(MOSCOW_LAT, MOSCOW_LON)
+        assert _valid_coords(-33.9, 151.2)
+
+    def test_нулевой_остров_отвергается(self):
+        """0,0 — это «координат нет», а не точка в Атлантике."""
+        assert not _valid_coords(0, 0)
+
+    def test_за_границами_диапазона(self):
+        assert not _valid_coords(91, 0)
+        assert not _valid_coords(0, 181)
+        assert not _valid_coords(-91, 0)
+
+    def test_отсутствующие(self):
+        assert not _valid_coords(None, MOSCOW_LON)
+        assert not _valid_coords(MOSCOW_LAT, None)
+
+    def test_границы_допустимы(self):
+        assert _valid_coords(90, 180)
+        assert _valid_coords(-90, -180)
+
+
+# --- разбор фреймов ---------------------------------------------------------
+
+
+class TestInitialState:
+    def test_профили_и_состояния(self):
+        parser = ZondParser()
+        positions = parser.feed({
+            "type": "initialState",
+            "payload": {
+                "profiles": [
+                    {"id": "f1", "name": "Аня"},
+                    {"id": "f2", "name": "Борис"},
+                ],
+                "states": [
+                    make_state("f1", 55.75, 37.62),
+                    make_state("f2", 55.76, 37.63),
+                ],
+            },
+        })
+
+        assert len(positions) == 2
+        assert {p.friend_id for p in positions} == {"f1", "f2"}
+        assert {p.name for p in positions} == {"Аня", "Борис"}
+
+    def test_поля_состояния_разбираются(self):
+        parser = ZondParser()
+        (position,) = parser.feed({
+            "type": "initialState",
+            "payload": {
+                "profiles": [{"id": "f1", "name": "Аня"}],
+                "states": [make_state(
+                    "f1",
+                    location={"lat": 55.75, "lon": 37.62, "accuracy": 12.5,
+                              "speed": 3.2, "azimuth": 180.0},
+                    battery={"level": 0.53, "isCharging": True},
+                    movement={"status": "walking"},
+                    lastSeen=1_700_000_000_000,
+                    locationPlace={"status": {"id": "home"}},
+                )],
+            },
+        })
+
+        assert position.latitude == 55.75
+        assert position.longitude == 37.62
+        assert position.accuracy == 12.5
+        assert position.speed == 3.2
+        assert position.course == 180.0
+        assert position.battery == 53
+        assert position.charging is True
+        assert position.movement == "walking"
+        assert position.place == "home"
+        assert position.last_seen == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
+
+
+class TestFriendState:
+    """friendState — апдейт одного друга, payload САМ является состоянием.
+
+    Обёртки states[] в нём нет, и парсер опознаёт такой фрейм по структуре:
+    есть id и вложенный location. Из-за этой особенности апдейты когда-то
+    молча терялись, поэтому случай проверяется отдельно.
+    """
+
+    def test_payload_сам_является_состоянием(self):
+        parser = ZondParser()
+        (position,) = parser.feed({
+            "type": "friendState",
+            "payload": make_state("f1", 55.80, 37.70),
+        })
+
+        assert position.friend_id == "f1"
+        assert position.latitude == 55.80
+
+    def test_имя_берётся_из_кэша(self):
+        """В friendState имени нет — оно пришло раньше, в initialState."""
+        parser = ZondParser()
+        parser.feed({
+            "type": "initialState",
+            "payload": {"profiles": [{"id": "f1", "name": "Аня"}], "states": []},
+        })
+
+        (position,) = parser.feed({
+            "type": "friendState",
+            "payload": make_state("f1"),
+        })
+        assert position.name == "Аня"
+
+    def test_без_кэша_имя_пустое(self):
+        parser = ZondParser()
+        (position,) = parser.feed({
+            "type": "friendState",
+            "payload": make_state("f1"),
+        })
+        assert position.name is None
+
+    def test_имя_переживает_много_фреймов(self):
+        parser = ZondParser()
+        parser.feed({
+            "type": "initialState",
+            "payload": {"profiles": [{"id": "f1", "name": "Аня"}], "states": []},
+        })
+        for _ in range(10):
+            (position,) = parser.feed({
+                "type": "friendState",
+                "payload": make_state("f1"),
+            })
+        assert position.name == "Аня"
+
+
+class TestSingularState:
+    def test_обёртка_state_в_единственном_числе(self):
+        parser = ZondParser()
+        (position,) = parser.feed({
+            "type": "чтоТоНовое",
+            "payload": {"state": make_state("f1")},
+        })
+        assert position.friend_id == "f1"
+
+
+class TestНеваляжныеФреймы:
+    """Ничто из этого не должно ронять парсер: сокет живёт часами."""
+
+    @pytest.mark.parametrize("frame", [
+        None, "строка", 42, [], {},
+        {"type": "ping"},
+        {"type": "x", "payload": None},
+        {"type": "x", "payload": "не словарь"},
+        {"type": "x", "payload": []},
+    ])
+    def test_пустой_результат_без_исключений(self, frame):
+        assert ZondParser().feed(frame) == []
+
+    def test_состояние_без_координат_пропускается(self):
+        """Друг есть в списке, но геопозицией не делится — сущность не нужна."""
+        parser = ZondParser()
+        assert parser.feed({
+            "type": "initialState",
+            "payload": {"states": [{"id": "f1", "location": {}}]},
+        }) == []
+
+    def test_нулевые_координаты_пропускаются(self):
+        parser = ZondParser()
+        assert parser.feed({
+            "type": "friendState",
+            "payload": make_state("f1", 0, 0),
+        }) == []
+
+    def test_состояние_без_id_пропускается(self):
+        parser = ZondParser()
+        assert parser.feed({
+            "type": "initialState",
+            "payload": {"states": [{"location": {"lat": 55.7, "lon": 37.6}}]},
+        }) == []
+
+    def test_годные_состояния_не_страдают_от_негодных(self):
+        """Один битый друг не должен утопить остальных."""
+        parser = ZondParser()
+        positions = parser.feed({
+            "type": "initialState",
+            "payload": {"states": [
+                {"мусор": True},
+                make_state("f1"),
+                {"id": "f2", "location": {}},
+                make_state("f3"),
+            ]},
+        })
+        assert {p.friend_id for p in positions} == {"f1", "f3"}
+
+    def test_профиль_без_имени_не_ломает(self):
+        parser = ZondParser()
+        parser.feed({
+            "type": "initialState",
+            "payload": {"profiles": [{"id": "f1"}, {"name": "безымянный"}], "states": []},
+        })
+        assert parser.names == {}
+
+
+class TestSignature:
+    """Сигнатура нужна координатору: zond шлёт один friendState по 2-3 раза."""
+
+    def test_одинаковые_данные_дают_одинаковую_сигнатуру(self):
+        a = FriendPosition("f1", 55.75, 37.62, battery=50)
+        b = FriendPosition("f1", 55.75, 37.62, battery=50)
+        assert a.signature == b.signature
+
+    def test_имя_на_сигнатуру_не_влияет(self):
+        """Имя может подъехать позже — это не повод считать позицию новой."""
+        a = FriendPosition("f1", 55.75, 37.62, name=None)
+        b = FriendPosition("f1", 55.75, 37.62, name="Аня")
+        assert a.signature == b.signature
+
+    @pytest.mark.parametrize("field,value", [
+        ("latitude", 55.76),
+        ("longitude", 37.63),
+        ("battery", 49),
+        ("charging", True),
+        ("accuracy", 5.0),
+        ("movement", "driving"),
+        ("place", "work"),
+    ])
+    def test_изменение_значимого_поля_меняет_сигнатуру(self, field, value):
+        base = dict(friend_id="f1", latitude=55.75, longitude=37.62, battery=50)
+        a = FriendPosition(**base)
+        b = FriendPosition(**{**base, field: value})
+        assert a.signature != b.signature
