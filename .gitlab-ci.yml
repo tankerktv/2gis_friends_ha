@@ -87,6 +87,15 @@ validate:python:
   script:
     - python -m compileall -q custom_components bridge tools
 
+validate:tests:
+  stage: validate
+  script:
+    # Home Assistant не ставим: тесты трогают только разбор протокола и
+    # построение рамки, а это чистая логика без зависимостей от HA.
+    # Как модули загружаются в обход __init__.py — см. tests/conftest.py.
+    - pip install --quiet --disable-pip-version-check pytest pytest-asyncio aiohttp
+    - python -m pytest -q
+
 # --- зеркало ----------------------------------------------------------------
 
 mirror:github:
