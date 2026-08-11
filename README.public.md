@@ -1,122 +1,125 @@
-# Друзья 2ГИС в Home Assistant
+# 2GIS Friends for Home Assistant
 
-Показывает на карте Home Assistant тех, кто делится с тобой геопозицией в 2ГИС.
-Для каждого друга — точка на карте, заряд телефона и время последнего обновления.
+Puts the people who share their location with you in 2GIS on your Home Assistant
+map. Every friend gets a map marker, a phone battery reading and a "last seen"
+timestamp.
 
-> **In English:** this integration brings 2GIS «Friends on map» into Home Assistant.
-> Each friend becomes a device with a GPS `device_tracker`, a battery sensor and a
-> «last seen» timestamp. The UI is available in English and Russian.
+*[Русская версия](README.ru.md)*
+
+2GIS is a mapping service widely used across Russia and the CIS. Its mobile app
+has a "Friends on map" feature; this integration brings that data into Home
+Assistant. The Home Assistant UI is available in both English and Russian.
 
 ---
 
-## Что нужно
+## Requirements
 
-* Home Assistant **2024.12** или новее
-* аккаунт 2ГИС, в котором друзья делятся с тобой местоположением
+* Home Assistant **2024.12** or newer
+* a 2GIS account with friends sharing their location with you
 
-Иконка интеграции появится на Home Assistant 2026.3 и новее.
+The integration icon appears on Home Assistant 2026.3 and newer.
 
-## Установка
+## Installation
 
-**Через HACS** (проще всего):
+**Via HACS** (recommended):
 
 1. HACS → **Integrations** → ⋮ → **Custom repositories**
-2. вставить `https://github.com/tankerktv/2gis_friends_ha`, категория **Integration**
-3. найти «2GIS Friends» → **Download**
-4. перезапустить Home Assistant
+2. add `https://github.com/tankerktv/2gis_friends_ha`, category **Integration**
+3. find "2GIS Friends" → **Download**
+4. restart Home Assistant
 
-**Вручную:** скопировать папку `custom_components/twogis_friends` в `config/custom_components/` и перезапустить Home Assistant.
+**Manually:** copy the `custom_components/twogis_friends` folder into
+`config/custom_components/` and restart Home Assistant.
 
-## Настройка
+## Setup
 
-**Настройки → Устройства и службы → Добавить интеграцию → 2GIS Friends**
+**Settings → Devices & Services → Add Integration → 2GIS Friends**
 
-Интеграция попросит токен доступа. Взять его так:
+You will be asked for an access token. Here is how to get it:
 
-1. открыть [2gis.ru](https://2gis.ru) и войти в свой аккаунт
-2. нажать **F12** → вкладка **Network** → кнопка фильтра **WS**
-3. обновить страницу, дождаться строки `user/ws`
-4. кликнуть по ней → **Headers** → **Request URL**
-5. скопировать значение параметра `token=` — это 40 символов из цифр и букв a–f
+1. open [2gis.ru](https://2gis.ru) and sign in
+2. press **F12** → **Network** tab → click the **WS** filter
+3. reload the page and wait for a `user/ws` row to appear
+4. click it → **Headers** → **Request URL**
+5. copy the value of the `token=` parameter — 40 characters, digits and letters a–f
 
-Токен сразу проверяется, так что опечатку видно на месте. Когда он однажды
-перестанет работать, Home Assistant сам попросит новый.
+The token is verified immediately, so a typo shows up right away. When it
+eventually expires, Home Assistant will ask you for a new one.
 
-## Что появится
+## What you get
 
-На каждого друга создаётся устройство с тремя сущностями:
+Each friend becomes a device with three entities:
 
-| Сущность | Что показывает |
+| Entity | Shows |
 |---|---|
-| `device_tracker` | точку на карте |
-| `sensor` «Батарея» | заряд телефона в процентах |
-| `sensor` «Последнее обновление» | когда данные приходили в последний раз |
+| `device_tracker` | position on the map |
+| `sensor` "Battery" | phone charge, in percent |
+| `sensor` "Last seen" | when data last arrived |
 
-Твой собственный аккаунт тоже попадёт в список — за собой можно наблюдать без
-отдельной настройки.
+Your own account shows up too, so you can track yourself without any extra setup.
 
-В атрибутах трекера есть дополнительное: движется друг или стоит, заряжается ли
-телефон, скорость, направление и как 2ГИС определяет место (дом, работа).
+The tracker also carries attributes: whether the friend is moving or stationary,
+whether the phone is charging, speed, heading, and how 2GIS classifies the place
+(home, work).
 
-## Настройки
+## Options
 
-**Настройки → Устройства и службы → 2GIS Friends → Настроить**
+**Settings → Devices & Services → 2GIS Friends → Configure**
 
-**Радиус области.** 2ГИС присылает обновления только по друзьям внутри области
-карты. Область — квадрат вокруг координат твоего Home Assistant, по умолчанию 2°
-(примерно 220 км в каждую сторону). Друг за её пределами просто перестанет
-обновляться.
+**Viewport radius.** 2GIS only sends updates for friends inside a map viewport.
+That viewport is a square around your Home Assistant coordinates, 2° by default
+(roughly 220 km in each direction). A friend outside it simply stops updating.
 
-**Переподключаться после тишины.** Если от 2ГИС долго ничего не приходит,
-интеграция пересоздаёт соединение. По умолчанию 8 минут.
+**Reconnect after silence.** If nothing arrives from 2GIS for a while, the
+integration rebuilds the connection. Default is 8 minutes.
 
-## Что важно знать
+## Things worth knowing
 
-**Обновления приходят сами.** Интеграция не опрашивает сервер по расписанию —
-2ГИС присылает данные, когда они меняются. У друга, стоящего на месте, это
-примерно раз в 4 минуты. Поэтому «интервала опроса» в настройках нет.
+**Updates are pushed, not polled.** The integration never polls on a schedule —
+2GIS sends data when it changes, roughly every 4 minutes for someone standing
+still. That is why there is no "scan interval" option.
 
-**Иногда координаты устаревают.** Если друг перестал делиться геопозицией, 2ГИС
-продолжает отдавать его **последнюю известную** точку. На карте это выглядит
-так, будто человек стоит на месте прямо сейчас, хотя данным могут быть часы.
-Отличить можно по сенсору «Последнее обновление» или по атрибуту `movement` —
-у таких точек он равен `noGeo`.
+**Coordinates can be stale.** When a friend stops sharing their location, 2GIS
+keeps returning their **last known** position. On the map this looks like the
+person is standing still right now, while the data may be hours old. You can
+tell the difference from the "Last seen" sensor, or from the `movement`
+attribute — stale points have it set to `noGeo`.
 
-**История копится с момента установки.** Архива у 2ГИС нет, поэтому увидеть, где
-друг был до того, как ты поставил интеграцию, не получится.
+**History starts when you install.** 2GIS offers no archive, so you cannot see
+where a friend was before the integration was set up.
 
-**Данные никуда не уходят.** Интеграция общается только с серверами 2ГИС, всё
-остальное остаётся в твоём Home Assistant.
+**Nothing leaves your network.** The integration talks only to 2GIS servers;
+everything else stays inside your Home Assistant.
 
-## Показать историю перемещений
+## Showing movement history
 
-Штатная карточка карты умеет рисовать след за последние часы:
+The built-in map card can draw a trail for the last few hours:
 
 ```yaml
 type: map
 entities:
-  - device_tracker.имя_друга
+  - device_tracker.friend_name
 hours_to_show: 24
 auto_fit: true
 ```
 
-Чтобы выбирать конкретный день, подойдёт сторонняя карточка
-[Location Timeline Card](https://github.com/konewka17/timeline_card) из HACS —
-наши сущности с ней совместимы.
+To browse a specific day, the third-party
+[Location Timeline Card](https://github.com/konewka17/timeline_card) from HACS
+works well — these entities are compatible with it.
 
-## Если что-то не работает
+## Troubleshooting
 
-Загляни в **Настройки → Система → Журналы** и поищи `twogis_friends`.
+Check **Settings → System → Logs** and search for `twogis_friends`.
 
-Частые случаи:
+Common cases:
 
-* **координаты застыли** — посмотри сенсор «Последнее обновление»; если он тоже
-  старый, интеграция потеряла связь, помогает перезагрузка интеграции;
-* **друга нет в списке** — либо он не делится с тобой геопозицией, либо находится
-  за пределами области охвата, см. настройки;
-* **просит новый токен** — прежний перестал действовать, возьми свежий тем же
-  способом, что при установке.
+* **coordinates frozen** — look at the "Last seen" sensor; if it is stale too,
+  the integration lost its connection, and reloading the integration helps;
+* **a friend is missing** — either they are not sharing their location with you,
+  or they are outside the viewport, see Options;
+* **asked for a new token** — the old one stopped working, get a fresh one the
+  same way you did during setup.
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
