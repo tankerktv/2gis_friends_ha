@@ -21,6 +21,7 @@ from twogis_friends.models import (
     _num,
     _to_datetime,
     _valid_coords,
+    can_remove_device,
 )
 
 MOSCOW_LAT = 55.7539
@@ -412,3 +413,40 @@ class TestIsAtHome:
         })
         assert pos.is_at_home is True
         assert pos.is_stale is False
+
+
+class TestCanRemoveDevice:
+    """Уборка устройств друзей, пропавших из списка 2ГИС.
+
+    Понадобилась после реального случая: у друга сменился идентификатор на
+    стороне 2ГИС, интеграция завела второе устройство, а первое осталось
+    навсегда — человек в интерфейсе задвоился.
+    """
+
+    HUB = "01JABCDEF"
+
+    def test_пропавшего_друга_можно_убрать(self):
+        assert can_remove_device({"старый_id"}, self.HUB, {"живой_id"}) is True
+
+    def test_живого_друга_убрать_нельзя(self):
+        """Иначе следующее обновление создаст его заново.
+
+        Пользователь решит, что удаление сломано, и будет прав: устройство
+        вернётся само через несколько секунд.
+        """
+        assert can_remove_device({"живой_id"}, self.HUB, {"живой_id"}) is False
+
+    def test_служебное_устройство_убрать_нельзя(self):
+        """На нём висит состояние связи — единственный признак, что она жива."""
+        assert can_remove_device({self.HUB}, self.HUB, {"живой_id"}) is False
+
+    def test_служебное_защищено_даже_когда_друзей_нет(self):
+        assert can_remove_device({self.HUB}, self.HUB, set()) is False
+
+    def test_когда_данных_нет_вовсе_можно_убрать_любого_друга(self):
+        """Данных нет — значит, и удерживать устройство нечем."""
+        assert can_remove_device({"кто_то"}, self.HUB, set()) is True
+
+    def test_устройство_без_наших_идентификаторов(self):
+        """Чужое устройство до нас дойти не должно, но и падать не будем."""
+        assert can_remove_device(set(), self.HUB, {"живой_id"}) is True
