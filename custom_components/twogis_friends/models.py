@@ -29,6 +29,16 @@ NO_GEO_TYPES = frozenset({
     "error",
 })
 
+#: значение ``movement.status``, которым 2ГИС помечает устаревшие координаты.
+#: Друг перестал делиться геопозицией, но последняя известная точка продолжает
+#: приходить как обычная — на карте это выглядит как «стоит на месте сейчас».
+MOVEMENT_NO_GEO = "noGeo"
+
+#: значение ``locationPlace.status.id`` для дома друга. В снятом дампе это
+#: единственное встретившееся значение; словарь целиком неизвестен, поэтому
+#: сравниваем именно с ним, а не разбираем все возможные варианты.
+PLACE_HOME = "home"
+
 
 @dataclass(frozen=True)
 class FriendPosition:
@@ -55,6 +65,35 @@ class FriendPosition:
             self.latitude, self.longitude, self.battery, self.charging,
             self.accuracy, self.last_seen, self.movement, self.place,
         )
+
+    @property
+    def is_stale(self) -> bool | None:
+        """Устарели ли координаты.
+
+        ``None`` — 2ГИС ничего не сказал про движение, а не «свежие».
+        Разница существенная: ``False`` утверждало бы то, чего мы не знаем.
+        """
+        if self.movement is None:
+            return None
+        return self.movement == MOVEMENT_NO_GEO
+
+    @property
+    def is_at_home(self) -> bool | None:
+        """Дома ли друг — по данным 2ГИС, а не по зонам Home Assistant.
+
+        Это «частое место» самого друга, его собственный дом. С зонами твоего
+        Home Assistant не связано никак: друг может быть у себя дома и при этом
+        быть ``not_home`` в трекере.
+
+        ``None`` — 2ГИС не прислал место (в дампе так у одного из пяти).
+
+        **Осторожно:** ``locationPlace`` сохраняется и при ``noGeo``. Если друг
+        перестал делиться, находясь дома, значение останется ``True`` сколь
+        угодно долго. Отличать по :attr:`is_stale`.
+        """
+        if self.place is None:
+            return None
+        return self.place == PLACE_HOME
 
 
 def _num(value: Any) -> float | None:
