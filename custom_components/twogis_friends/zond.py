@@ -74,15 +74,38 @@ class ZondClient:
         viewport: Viewport,
         on_positions: Callable[[Iterable[FriendPosition]], None],
         idle_timeout: float = IDLE_TIMEOUT,
+        on_connection_change: Callable[[bool], None] | None = None,
     ) -> None:
         self._session = session
         self._token = token
         self._viewport = viewport
         self._on_positions = on_positions
         self._idle_timeout = idle_timeout
+        self._on_connection_change = on_connection_change
         self._parser = ZondParser()
         self._last_rx = 0.0
         self.connected = False
+
+    def _set_connected(self, value: bool) -> None:
+        """Меняет флаг и сообщает наружу — но только о самой смене.
+
+        Без уведомления сущность состояния связи узнавала бы о разрыве лишь
+        при следующем входящем фрейме, то есть никогда: связи-то нет.
+
+        Ошибку в колбэке гасим намеренно. Он ведёт в Home Assistant, и если
+        оттуда прилетит исключение, оно поднимется в цикл переподключения и
+        уронит фоновую задачу — интеграция замрёт целиком из-за декоративной
+        сущности.
+        """
+        if self.connected == value:
+            return
+        self.connected = value
+        if self._on_connection_change is None:
+            return
+        try:
+            self._on_connection_change(value)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Колбэк состояния связи упал, продолжаю работу")
 
     @property
     def _url(self) -> str:
@@ -115,7 +138,7 @@ class ZondClient:
                 # Home Assistant: сущности останутся, а обновлений не будет.
                 _LOGGER.exception("Непредвиденная ошибка в сессии zond, переподключаюсь")
             finally:
-                self.connected = False
+                self._set_connected(False)
 
             attempt += 1
             delay = min(RECONNECT_MIN * 2 ** (attempt - 1), RECONNECT_MAX)
@@ -133,7 +156,7 @@ class ZondClient:
             max_msg_size=16 * 1024 * 1024,
         ) as ws:
             _LOGGER.info("Соединение с zond установлено")
-            self.connected = True
+            self._set_connected(True)
             self._last_rx = time.monotonic()
 
             # Сервер молчит, пока не получит viewportChanged — без него не будет
