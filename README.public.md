@@ -163,17 +163,39 @@ can prevent this; it happens on the 2GIS side.
 dead device → ⋮ → **Delete**. The live one cannot be deleted — the next update
 would just recreate it.
 
-**How to keep the history.** History in Home Assistant is tied to the entity
-id, not to the device. So:
+**How to keep the history.** History is tied to the entity id, not to the
+device. The order matters — get it wrong and the live friend's history is
+orphaned.
 
-1. write down the entity ids of the dead device
-   (for example `device_tracker.friend_name`);
-2. delete the dead device — those ids are freed;
-3. open the live device's entities and rename them to the freed ids
-   (they most likely carry a `_2` suffix right now).
+1. **First** rename the **dead** device's entities to free the good name:
+   `device_tracker.friend_name` → `device_tracker.friend_name_old`.
+   Its history follows the rename.
+2. Delete the dead device.
+3. Now rename the live device's entities to the freed name (they most likely
+   carry a `_2` suffix right now). Their history follows too.
 
-The history then joins up under a single entity id. The gap for the days the
-friend was missing stays — there is simply no data for those.
+The live friend ends up under a clean name with all of their history. The old
+one's history stays under `_old` and eventually goes away with the regular
+database purge.
+
+> **Why you cannot just delete and rename.** Removing an entity from the
+> registry **does not remove its history** — the rows stay in the database
+> until the regular age-based purge clears them. The name therefore stays
+> taken, and on rename the recorder checks for that and **refuses** to migrate
+> the history:
+>
+> ```
+> Cannot migrate history for entity_id `…` to `…`
+> because the new entity_id is already in use
+> ```
+>
+> The rename itself still goes through, but the live friend's history stays
+> behind under the old `_2` id and disappears from the UI. If you see that
+> warning in the log, the order was wrong.
+
+> **The two histories cannot be merged into a single timeline** — not through
+> the UI and not through settings. To the database they are two different
+> entities. Merging them would mean editing the recorder database directly.
 
 ## License
 
