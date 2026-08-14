@@ -71,6 +71,23 @@ on when 2GIS reports `noGeo`, meaning the friend stopped sharing and you are
 looking at their last known position. Note that "At home" keeps its last value
 in that case too, so read the two together.
 
+A separate device for the integration itself carries one more entity:
+
+| Entity | Shows |
+|---|---|
+| `binary_sensor` "2GIS connection" | whether the socket to 2GIS is alive |
+
+**Together with "Data is stale" it answers whose problem it is** — a distinction
+that matters, because the two are fixed differently:
+
+| Connection | Data is stale | What happened |
+|---|---|---|
+| on | on | the friend stopped sharing — nothing you can do |
+| off | — | our connection dropped — reloading the integration helps |
+
+This entity **stays available while the connection is down** — otherwise it
+would be useless at exactly the moment you need it.
+
 The tracker also carries attributes: whether the friend is moving or stationary,
 speed, heading, and the raw place label from 2GIS.
 
