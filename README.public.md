@@ -149,6 +149,32 @@ Common cases:
 * **asked for a new token** — the old one stopped working, get a fresh one the
   same way you did during setup.
 
+## A friend appears twice
+
+The same person shows up as two devices: one live, one permanently
+"unavailable" and with fewer entities.
+
+**Why.** A friend's id in 2GIS is not permanent — it changes when the person
+reinstalls the app or signs in with a different account. To the integration
+that is a new friend, so a new device appears and the old one stays. Nothing
+can prevent this; it happens on the 2GIS side.
+
+**How to remove it.** Settings → Devices & Services → 2GIS Friends → open the
+dead device → ⋮ → **Delete**. The live one cannot be deleted — the next update
+would just recreate it.
+
+**How to keep the history.** History in Home Assistant is tied to the entity
+id, not to the device. So:
+
+1. write down the entity ids of the dead device
+   (for example `device_tracker.friend_name`);
+2. delete the dead device — those ids are freed;
+3. open the live device's entities and rename them to the freed ids
+   (they most likely carry a `_2` suffix right now).
+
+The history then joins up under a single entity id. The gap for the days the
+friend was missing stays — there is simply no data for those.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

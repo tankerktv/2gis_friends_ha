@@ -96,6 +96,26 @@ class FriendPosition:
         return self.place == PLACE_HOME
 
 
+def can_remove_device(device_ids: set[str], hub_id: str, live_ids: set[str]) -> bool:
+    """Можно ли убрать устройство из Home Assistant.
+
+    Лежит здесь, а не в ``__init__.py``, по той же причине, что и остальная
+    логика: сюда не тянется Home Assistant, поэтому решение покрывается
+    тестами. В интеграции остаётся только достать идентификаторы и позвать.
+
+    :param device_ids: идентификаторы устройства в нашем домене
+    :param hub_id: идентификатор служебного устройства самой интеграции
+    :param live_ids: те, о ком 2ГИС присылает данные прямо сейчас
+    """
+    if hub_id in device_ids:
+        # Служебное устройство держит состояние связи. Удалив его, пользователь
+        # лишится единственного признака того, что соединение живо.
+        return False
+    # Живого друга удалять бессмысленно: следующее же обновление создаст
+    # устройство заново, и человек решит, что удаление не работает.
+    return not (device_ids & live_ids)
+
+
 def _num(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
