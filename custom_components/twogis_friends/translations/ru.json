@@ -49,6 +49,9 @@
       },
       "at_home": {
         "name": "Дома"
+      },
+      "connection": {
+        "name": "Связь с 2ГИС"
       }
     },
     "sensor": {

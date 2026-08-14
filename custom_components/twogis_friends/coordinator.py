@@ -51,7 +51,19 @@ class TwoGisCoordinator(DataUpdateCoordinator[dict[str, FriendPosition]]):
             viewport,
             self._handle_positions,
             idle_timeout=float(idle_min) * 60,
+            on_connection_change=self._handle_connection_change,
         )
+
+    @callback
+    def _handle_connection_change(self, connected: bool) -> None:
+        """Толкает сущности при обрыве и восстановлении связи.
+
+        Обычные обновления приходят вместе с данными, но при обрыве данных как
+        раз и нет — без этого толчка сущность состояния связи так и показывала
+        бы «подключено» до самого конца.
+        """
+        _LOGGER.debug("Состояние связи с zond: %s", "есть" if connected else "нет")
+        self.async_update_listeners()
 
     @callback
     def _handle_positions(self, positions: Iterable[FriendPosition]) -> None:

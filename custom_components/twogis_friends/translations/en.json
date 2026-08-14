@@ -49,6 +49,9 @@
       },
       "at_home": {
         "name": "At home"
+      },
+      "connection": {
+        "name": "2GIS connection"
       }
     },
     "sensor": {

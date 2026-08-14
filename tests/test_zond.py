@@ -203,3 +203,74 @@ class TestReadLoop:
         await client._read_loop(FakeWS([text(FRIEND_STATE)]))
 
         assert client._last_rx > 0.0
+
+
+class TestConnectionState:
+    """Состояние связи, из которого собирается одноимённая сущность.
+
+    Проверять важно потому, что при обрыве никаких данных не приходит: если
+    уведомление не отправить здесь, сущность так и будет показывать
+    «подключено», пока связь не восстановится сама.
+    """
+
+    def make(self):
+        events = []
+        client = ZondClient(
+            session=None,
+            token="токен",
+            viewport=Viewport(55.75, 37.62, 1.0),
+            on_positions=lambda _: None,
+            on_connection_change=events.append,
+        )
+        return client, events
+
+    def test_изначально_не_подключен(self):
+        client, _ = self.make()
+        assert client.connected is False
+
+    def test_подключение_и_обрыв_уведомляют(self):
+        client, events = self.make()
+        client._set_connected(True)
+        client._set_connected(False)
+        assert events == [True, False]
+
+    def test_повтор_того_же_состояния_молчит(self):
+        """Цикл переподключения сбрасывает флаг на каждом проходе.
+
+        Без проверки на смену Home Assistant получал бы толчок при каждой
+        неудачной попытке — десятки лишних обновлений в час.
+        """
+        client, events = self.make()
+        client._set_connected(True)
+        client._set_connected(True)
+        client._set_connected(False)
+        client._set_connected(False)
+        assert events == [True, False]
+
+    def test_флаг_меняется_даже_без_колбэка(self):
+        client = ZondClient(
+            session=None,
+            token="токен",
+            viewport=Viewport(55.75, 37.62, 1.0),
+            on_positions=lambda _: None,
+        )
+        client._set_connected(True)
+        assert client.connected is True
+
+    def test_ошибка_в_колбэке_не_выпускается(self):
+        """Иначе исключение поднимется в цикл переподключения и уронит задачу.
+
+        Интеграция замрёт целиком — из-за одной диагностической сущности.
+        """
+        def падающий(_value):
+            raise RuntimeError("Home Assistant сказал нет")
+
+        client = ZondClient(
+            session=None,
+            token="токен",
+            viewport=Viewport(55.75, 37.62, 1.0),
+            on_positions=lambda _: None,
+            on_connection_change=падающий,
+        )
+        client._set_connected(True)          # не должно бросить
+        assert client.connected is True

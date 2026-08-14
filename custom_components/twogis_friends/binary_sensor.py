@@ -26,7 +26,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import TwoGisConfigEntry
 from .coordinator import TwoGisCoordinator
-from .entity import TwoGisFriendEntity
+from .entity import TwoGisFriendEntity, TwoGisHubEntity
 from .models import FriendPosition
 
 
@@ -70,6 +70,10 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     known: set[str] = set()
 
+    # Одна на всю интеграцию, не на друга. Создаётся сразу и безусловно:
+    # если данных ещё нет, именно она и объяснит, почему.
+    async_add_entities([TwoGisConnectionSensor(coordinator)])
+
     @callback
     def _add_new_friends() -> None:
         new: list[TwoGisFriendBinarySensor] = []
@@ -86,6 +90,30 @@ async def async_setup_entry(
 
     entry.async_on_unload(coordinator.async_add_listener(_add_new_friends))
     _add_new_friends()
+
+
+class TwoGisConnectionSensor(TwoGisHubEntity, BinarySensorEntity):
+    """Есть ли живое соединение с 2ГИС.
+
+    Отвечает на вторую половину вопроса «чья это проблема». «Данные устарели»
+    у друга означает, что делиться перестал он. Эта сущность показывает
+    обратный случай: у нас оборвалась связь, и данные не приходят ни по кому.
+
+    Различить их иначе нельзя, а лечатся они по-разному: в первом случае делать
+    нечего, во втором помогает перезагрузка интеграции.
+    """
+
+    _attr_translation_key = "connection"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: TwoGisCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_connection"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.client.connected
 
 
 class TwoGisFriendBinarySensor(TwoGisFriendEntity, BinarySensorEntity):
