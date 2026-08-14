@@ -337,3 +337,78 @@ class TestSignature:
         a = FriendPosition(**base)
         b = FriendPosition(**{**base, field: value})
         assert a.signature != b.signature
+
+
+# --- признаки, из которых собираются бинарные сенсоры ------------------------
+
+
+def position(**kwargs):
+    return FriendPosition(friend_id="f1", latitude=MOSCOW_LAT, longitude=MOSCOW_LON, **kwargs)
+
+
+class TestIsStale:
+    """Главный признак: координаты пришли, но им может быть несколько часов."""
+
+    def test_noGeo_значит_устарели(self):
+        assert position(movement="noGeo").is_stale is True
+
+    @pytest.mark.parametrize("movement", ["stopped", "walking", "driving"])
+    def test_обычное_движение_значит_свежие(self, movement):
+        assert position(movement=movement).is_stale is False
+
+    def test_без_данных_неизвестно_а_не_свежие(self):
+        """`False` утверждало бы то, чего мы не знаем, — а на этом строят автоматизации."""
+        assert position().is_stale is None
+
+    def test_регистр_имеет_значение(self):
+        """2ГИС шлёт ровно `noGeo`; совпадение по другому регистру было бы догадкой."""
+        assert position(movement="nogeo").is_stale is False
+
+
+class TestIsAtHome:
+    """Дом самого друга по данным 2ГИС — не зона Home Assistant."""
+
+    def test_home_значит_дома(self):
+        assert position(place="home").is_at_home is True
+
+    def test_другое_место_значит_не_дома(self):
+        assert position(place="work").is_at_home is False
+
+    def test_без_места_неизвестно(self):
+        """`locationPlace` приходит не всегда — в снятом дампе его нет у одного из пяти."""
+        assert position().is_at_home is None
+
+    def test_регистр_имеет_значение(self):
+        """Сравниваем точно, как у `movement`.
+
+        Наблюдалось ровно одно значение — `home`. Совпадение по другому регистру
+        было бы догадкой о словаре, которого мы не знаем: если 2ГИС однажды
+        начнёт слать `Home`, лучше увидеть «не дома» и разобраться, чем тихо
+        подстроиться и не заметить, что протокол поменялся.
+        """
+        assert position(place="Home").is_at_home is False
+
+    def test_сохраняется_при_устаревших_данных(self):
+        """Осознанное поведение, а не недосмотр.
+
+        2ГИС продолжает отдавать `locationPlace` и после того, как друг
+        перестал делиться. Значение остаётся последним известным — ровно так же,
+        как остаются координаты. Признаком негодности служит `is_stale`,
+        и именно поэтому обе сущности имеет смысл заводить только вместе.
+        """
+        stale_at_home = position(place="home", movement="noGeo")
+        assert stale_at_home.is_at_home is True
+        assert stale_at_home.is_stale is True
+
+    def test_разбирается_из_фрейма(self):
+        parser = ZondParser()
+        (pos,) = parser.feed({
+            "type": "friendState",
+            "payload": make_state(
+                "f1",
+                locationPlace={"status": {"id": "home", "type": "frequent"}},
+                movement={"status": "stopped"},
+            ),
+        })
+        assert pos.is_at_home is True
+        assert pos.is_stale is False

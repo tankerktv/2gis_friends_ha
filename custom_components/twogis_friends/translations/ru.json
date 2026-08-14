@@ -40,6 +40,17 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "stale": {
+        "name": "Данные устарели"
+      },
+      "battery_charging": {
+        "name": "Заряжается"
+      },
+      "at_home": {
+        "name": "Дома"
+      }
+    },
     "sensor": {
       "battery": {
         "name": "Батарея"
