@@ -48,19 +48,31 @@ eventually expires, Home Assistant will ask you for a new one.
 
 ## What you get
 
-Each friend becomes a device with three entities:
+Each friend becomes a device with six entities:
 
 | Entity | Shows |
 |---|---|
 | `device_tracker` | position on the map |
-| `sensor` "Battery" | phone charge, in percent |
+| `sensor` "Battery" | phone charge, in percent — the icon switches to the charging one |
 | `sensor` "Last seen" | when data last arrived |
+| `binary_sensor` "At home" | whether 2GIS places the friend at their own home |
+| `binary_sensor` "Charging" | whether the phone is on a charger |
+| `binary_sensor` "Data is stale" | whether the coordinates can still be trusted |
 
 Your own account shows up too, so you can track yourself without any extra setup.
 
+**"At home" is about the friend's own home, not your Home Assistant zones.**
+2GIS knows the places a person visits often and labels one of them as home.
+A friend can be at their own home and still show as `not_home` in the tracker —
+these are two different questions, and both are useful.
+
+**"Data is stale" is the one to check first when something looks odd.** It turns
+on when 2GIS reports `noGeo`, meaning the friend stopped sharing and you are
+looking at their last known position. Note that "At home" keeps its last value
+in that case too, so read the two together.
+
 The tracker also carries attributes: whether the friend is moving or stationary,
-whether the phone is charging, speed, heading, and how 2GIS classifies the place
-(home, work).
+speed, heading, and the raw place label from 2GIS.
 
 ## Options
 
