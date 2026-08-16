@@ -22,6 +22,7 @@ from twogis_friends.models import (
     _to_datetime,
     _valid_coords,
     can_remove_device,
+    friends_ready_for_entities,
 )
 
 MOSCOW_LAT = 55.7539
@@ -450,3 +451,45 @@ class TestCanRemoveDevice:
     def test_устройство_без_наших_идентификаторов(self):
         """Чужое устройство до нас дойти не должно, но и падать не будем."""
         assert can_remove_device(set(), self.HUB, {"живой_id"}) is True
+
+
+class TestFriendsReadyForEntities:
+    """Кому можно заводить сущности.
+
+    Сторож против порчи, которую нельзя исправить. Идентификатор сущности
+    Home Assistant назначает один раз, при создании, отталкиваясь от имени
+    устройства. Если имени в этот момент нет, он берёт название записи
+    интеграции — и у друга появляется трекер, названный по другому человеку.
+    Именно так 13.08.2026 возник `device_tracker.dmitrii_kotov_2` у Михаила.
+    """
+
+    def make(self, friend_id="f1", name="Аня"):
+        return FriendPosition(friend_id=friend_id, latitude=MOSCOW_LAT,
+                              longitude=MOSCOW_LON, name=name)
+
+    def test_друг_с_именем_готов(self):
+        assert friends_ready_for_entities({"f1": self.make()}) == ["f1"]
+
+    def test_без_имени_ждёт(self):
+        """Имя приходит только в initialState — подождём его."""
+        assert friends_ready_for_entities({"f1": self.make(name=None)}) == []
+
+    def test_пустое_имя_тоже_не_годится(self):
+        assert friends_ready_for_entities({"f1": self.make(name="")}) == []
+
+    def test_безымянный_не_мешает_остальным(self):
+        data = {"f1": self.make("f1", "Аня"),
+                "f2": self.make("f2", None),
+                "f3": self.make("f3", "Борис")}
+        assert sorted(friends_ready_for_entities(data)) == ["f1", "f3"]
+
+    def test_ожидание_не_навсегда(self):
+        """Как только имя приехало, друг становится готов."""
+        data = {"f1": self.make(name=None)}
+        assert friends_ready_for_entities(data) == []
+        data["f1"] = self.make(name="Аня")
+        assert friends_ready_for_entities(data) == ["f1"]
+
+    def test_пусто_и_none(self):
+        assert friends_ready_for_entities({}) == []
+        assert friends_ready_for_entities({"f1": None}) == []

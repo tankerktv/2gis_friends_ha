@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -94,6 +95,34 @@ class FriendPosition:
         if self.place is None:
             return None
         return self.place == PLACE_HOME
+
+
+def friends_ready_for_entities(data: Mapping[str, FriendPosition]) -> list[str]:
+    """Кому уже можно заводить сущности в Home Assistant.
+
+    Только тем, чьё имя известно, — и это не придирка, а защита от порчи,
+    которую потом не исправить.
+
+    Имя друга приходит **только** в ``initialState``, в списке профилей.
+    Если новый идентификатор появился в ``friendState`` раньше (так бывает,
+    когда человек переустановил приложение), имени в этот момент нет.
+    Home Assistant, не получив имени устройства, строит идентификаторы
+    сущностей от названия записи интеграции — и получается ``sensor.battery``
+    или, того хуже, трекер, названный по совсем другому человеку.
+
+    **Идентификатор сущности назначается один раз при создании.** Имя
+    устройства подтянется через минуту, когда приедет профиль, а кривой
+    идентификатор останется навсегда. Именно так 13.08.2026 появился
+    ``device_tracker.dmitrii_kotov_2`` у Михаила Котомина.
+
+    Ждать почти не приходится: ``initialState`` приходит в ответ на
+    ``viewportChanged``, а его шлёт keepalive каждые несколько минут.
+    """
+    return [
+        friend_id
+        for friend_id, position in data.items()
+        if position is not None and position.name
+    ]
 
 
 def can_remove_device(device_ids: set[str], hub_id: str, live_ids: set[str]) -> bool:
