@@ -20,7 +20,7 @@ from homeassistant.helpers.icon import icon_for_battery_level
 from . import TwoGisConfigEntry
 from .coordinator import TwoGisCoordinator
 from .entity import TwoGisFriendEntity
-from .models import FriendPosition
+from .models import FriendPosition, friends_ready_for_entities
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -67,7 +67,7 @@ async def async_setup_entry(
     @callback
     def _add_new_friends() -> None:
         new: list[TwoGisFriendSensor] = []
-        for friend_id in coordinator.data:
+        for friend_id in friends_ready_for_entities(coordinator.data):
             if friend_id in known:
                 continue
             known.add(friend_id)

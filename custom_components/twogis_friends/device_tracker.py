@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import TwoGisConfigEntry
 from .coordinator import TwoGisCoordinator
 from .entity import TwoGisFriendEntity
+from .models import friends_ready_for_entities
 
 
 async def async_setup_entry(
@@ -26,7 +27,7 @@ async def async_setup_entry(
         """Друзья появляются по мере прихода данных, не только при старте."""
         new = [
             TwoGisFriendTracker(coordinator, friend_id)
-            for friend_id in coordinator.data
+            for friend_id in friends_ready_for_entities(coordinator.data)
             if friend_id not in known
         ]
         if new:
