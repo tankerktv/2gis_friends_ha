@@ -10,8 +10,13 @@ from __future__ import annotations
 import pytest
 
 from twogis_friends.models import (
+    MIN_SHIRINA_SEKUND,
+    OKNO_SEKUND,
     PADENIE_MUSOR,
+    SHAG_TOCHKI,
+    dobavit_tochku,
     prirost_raskhoda,
+    srednee_po_oknu,
     srednee_v_sutki,
 )
 
@@ -74,3 +79,71 @@ class TestSredneeVSutki:
 
     def test_nichego_ne_izrashodovano(self) -> None:
         assert srednee_v_sutki(0.0, 86400.0) == 0.0
+
+
+class TestDobavitTochku:
+    def test_pervaia_otmetka_dobavliaetsia(self) -> None:
+        assert dobavit_tochku([], 1000.0, 5.0) == [(1000.0, 5.0)]
+
+    def test_chasche_shaga_ne_dobavliaet(self) -> None:
+        """Отметки нужны редкие: текущее значение в расчёт входит отдельно."""
+        est = [(1000.0, 5.0)]
+        assert dobavit_tochku(est, 1000.0 + 600, 7.0) == est
+
+    def test_posle_shaga_dobavliaet(self) -> None:
+        est = [(1000.0, 5.0)]
+        novye = dobavit_tochku(est, 1000.0 + SHAG_TOCHKI, 7.0)
+        assert novye == [(1000.0, 5.0), (1000.0 + SHAG_TOCHKI, 7.0)]
+
+    def test_staroe_vypadaet_iz_okna(self) -> None:
+        staraia = 1000.0
+        svezhaia = staraia + OKNO_SEKUND + 1
+        est = [(staraia, 5.0), (svezhaia, 9.0)]
+        novye = dobavit_tochku(est, svezhaia + SHAG_TOCHKI, 10.0)
+        assert (staraia, 5.0) not in novye
+
+    def test_hotia_by_odna_otmetka_ostayotsia(self) -> None:
+        """Даже если все отметки древние — считать надо от чего-то."""
+        est = [(0.0, 5.0)]
+        novye = dobavit_tochku(est, 10 * OKNO_SEKUND, 5.0, shag=1e9)
+        assert len(novye) == 1
+
+
+class TestSredneePoOknu:
+    def test_pustoe_okno(self) -> None:
+        assert srednee_po_oknu([], 1000.0, 5.0) is None
+
+    def test_vremia_ne_proshlo(self) -> None:
+        assert srednee_po_oknu([(1000.0, 5.0)], 1000.0, 5.0) is None
+
+    def test_sutki_rovno(self) -> None:
+        assert srednee_po_oknu([(0.0, 10.0)], 86400.0, 40.0) == pytest.approx(30.0)
+
+    def test_nedelia(self) -> None:
+        okno = [(0.0, 0.0)]
+        assert srednee_po_oknu(okno, 7 * 86400.0, 210.0) == pytest.approx(30.0)
+
+    def test_schitaet_ot_starshei_otmetki(self) -> None:
+        """Базой служит самая старая отметка в окне, а не последняя."""
+        okno = [(0.0, 10.0), (43200.0, 25.0)]
+        assert srednee_po_oknu(okno, 86400.0, 40.0) == pytest.approx(30.0)
+
+    def test_ne_zalipaet_v_otlichie_ot_pozhiznennogo(self) -> None:
+        """Смысл всей затеи: окно показывает нынешний режим, а не средний
+        за всю жизнь. Год по 80 в сутки, затем месяц по 40."""
+        god = 365 * 86400.0
+        mesiats = 30 * 86400.0
+        pozhiznenno = srednee_v_sutki(365 * 80 + 30 * 40, god + mesiats)
+        # В окне остался только последний месяц.
+        po_oknu = srednee_po_oknu([(god, 365 * 80.0)], god + mesiats,
+                                  365 * 80 + 30 * 40.0)
+        assert pozhiznenno == pytest.approx(77.0, abs=0.5)
+        assert po_oknu == pytest.approx(40.0)
+
+    def test_uzkoe_okno_nichego_ne_pokazyvaet(self) -> None:
+        """Две минуты окна и скачок накопителя давали 250 %/сут — мусор."""
+        assert srednee_po_oknu([(0.0, 20.0)], 120.0, 30.0) is None
+
+    def test_na_granitse_uzhe_schitaet(self) -> None:
+        assert srednee_po_oknu([(0.0, 0.0)], MIN_SHIRINA_SEKUND,
+                               10.0) is not None

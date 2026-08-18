@@ -25,10 +25,12 @@ from . import TwoGisConfigEntry
 from .coordinator import TwoGisCoordinator
 from .entity import TwoGisFriendEntity
 from .models import (
+    OKNO_SEKUND,
     FriendPosition,
+    dobavit_tochku,
     friends_ready_for_entities,
     prirost_raskhoda,
-    srednee_v_sutki,
+    srednee_po_oknu,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -140,12 +142,17 @@ class SostoyanieRaskhoda(ExtraStoredData):
     vsego: float
     posledniy_zaryad: int | None
     schet_s: str | None
+    #: Опорные отметки скользящего окна: ``[[момент, накоплено], ...]``.
+    #: Не полная история, а по одной отметке в час — этого хватает для
+    #: суточного среднего, а список остаётся коротким.
+    tochki: list[list[float]] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "vsego": self.vsego,
             "posledniy_zaryad": self.posledniy_zaryad,
             "schet_s": self.schet_s,
+            "tochki": self.tochki or [],
         }
 
 
@@ -175,6 +182,7 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
         self._vsego: float = 0.0
         self._posledniy: int | None = None
         self._schet_s: datetime | None = None
+        self._tochki: list[tuple[float, float]] = []
 
     @property
     def available(self) -> bool:
@@ -191,8 +199,13 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
 
     @property
     def schet_s(self) -> datetime | None:
-        """С какого момента копится — нужно суточному сенсору."""
+        """С какого момента копится — для справки в атрибутах."""
         return self._schet_s
+
+    @property
+    def tochki(self) -> list[tuple[float, float]]:
+        """Опорные отметки окна — из них соседний сенсор считает среднее."""
+        return self._tochki
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -207,6 +220,7 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
             vsego=self._vsego,
             posledniy_zaryad=self._posledniy,
             schet_s=self._schet_s.isoformat() if self._schet_s else None,
+            tochki=[[t, v] for t, v in self._tochki],
         )
 
     async def async_added_to_hass(self) -> None:
@@ -217,6 +231,10 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
             self._posledniy = sohranyonnoe.get("posledniy_zaryad")
             if (s_momenta := sohranyonnoe.get("schet_s")) :
                 self._schet_s = dt_util.parse_datetime(s_momenta)
+            self._tochki = [
+                (float(t), float(v))
+                for t, v in (sohranyonnoe.get("tochki") or [])
+            ]
         if self._schet_s is None:
             self._schet_s = dt_util.utcnow()
         # Первый замер берётся сразу при создании: иначе расход начал бы
@@ -246,6 +264,11 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
                     position.battery,
                 )
             self._posledniy = position.battery
+        # Отметка кладётся на каждом обновлении, но сама функция добавит
+        # новую не чаще раза в час и выбросит всё, что старше окна.
+        self._tochki = dobavit_tochku(
+            self._tochki, dt_util.utcnow().timestamp(), self._vsego
+        )
         super()._handle_coordinator_update()
 
 
@@ -275,26 +298,28 @@ class TwoGisRaskhodVSutki(TwoGisFriendEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self._vsego.schet_s is not None
+        return bool(self._vsego.tochki)
 
     @property
     def native_value(self) -> float | None:
-        nachalo = self._vsego.schet_s
-        if nachalo is None:
-            return None
-        sekund = (dt_util.utcnow() - nachalo).total_seconds()
-        return round(srednee_v_sutki(float(self._vsego.native_value), sekund), 1)
+        srednee = srednee_po_oknu(
+            self._vsego.tochki,
+            dt_util.utcnow().timestamp(),
+            float(self._vsego.native_value),
+        )
+        return None if srednee is None else round(srednee, 1)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        nachalo = self._vsego.schet_s
-        sutok = None
-        if nachalo is not None:
-            sutok = round(
-                (dt_util.utcnow() - nachalo).total_seconds() / 86400.0, 2
+        tochki = self._vsego.tochki
+        shirina = None
+        if tochki:
+            shirina = round(
+                (dt_util.utcnow().timestamp() - tochki[0][0]) / 86400.0, 2
             )
         return {
-            "vsego": self._vsego.native_value,
-            "schet_s": nachalo.isoformat() if nachalo else None,
-            "proshlo_sutok": sutok,
+            "izrashodovano_vsego": self._vsego.native_value,
+            "okno_sutok": round(OKNO_SEKUND / 86400.0, 1),
+            "shirina_okna_sutok": shirina,
+            "otmetok_v_okne": len(tochki),
         }
