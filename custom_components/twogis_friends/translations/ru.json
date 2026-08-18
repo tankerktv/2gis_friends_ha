@@ -60,6 +60,12 @@
       },
       "last_seen": {
         "name": "Последнее обновление"
+      },
+      "battery_drain": {
+        "name": "Расход батареи"
+      },
+      "battery_drain_daily": {
+        "name": "Расход батареи в сутки"
       }
     }
   }
