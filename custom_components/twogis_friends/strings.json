@@ -46,6 +46,12 @@
       },
       "last_seen": {
         "name": "Last seen"
+      },
+      "battery_drain": {
+        "name": "Battery drain"
+      },
+      "battery_drain_daily": {
+        "name": "Battery drain per day"
       }
     }
   }
