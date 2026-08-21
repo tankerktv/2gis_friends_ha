@@ -43,16 +43,26 @@ VIEWPORT_ZOOM: Final = 11
 # коды закрытия WS, означающие отказ авторизации
 AUTH_CLOSE_CODES: Final = frozenset({1008, 3000, 4000, 4001, 4003, 4401, 4403})
 
+#: Ключи в ``.storage/core.restore_state`` у счётчика расхода. Транслит здесь
+#: оставлен намеренно: эти имена уже записаны у всех, кто пользуется
+#: интеграцией, и при переименовании восстановление молча не нашло бы своих
+#: данных — накопленный расход у каждого друга обнулился бы без единой ошибки
+#: в журнале. Наружу они не видны, в отличие от атрибутов сущностей.
+KEY_TOTAL: Final = "vsego"
+KEY_LAST_BATTERY: Final = "posledniy_zaryad"
+KEY_COUNTING_SINCE: Final = "schet_s"
+KEY_POINTS: Final = "tochki"
+
 #: Ключ в ``hass.data``, под которым переезд оставляет накопленный расход
 #: удаляемого дубля, чтобы сущность-переселенец забрала его при создании.
-PERENOS_RASKHODA: Final = "perenos_raskhoda"
+DRAIN_HANDOVER: Final = "perenos_raskhoda"
 
 #: Ключ в ``hass.data``: какие переезды сторож уже пробовал сделать на лету,
 #: ``entry_id -> {старый: новый}``. Живёт вне данных записи намеренно — иначе
 #: перезагрузка стирала бы память о попытке, и неудачный переезд крутил бы
 #: перезагрузки по кругу.
-POPYTKI_PEREEZDA: Final = "popytki_pereezda"
+MIGRATION_ATTEMPTS: Final = "popytki_pereezda"
 
 #: Окончание ``unique_id`` накопителя расхода. Суточный сенсор оканчивается
 #: на ``_battery_drain_daily`` и под это условие намеренно не подходит.
-SUFFIX_RASKHOD: Final = "_battery_drain"
+SUFFIX_DRAIN: Final = "_battery_drain"

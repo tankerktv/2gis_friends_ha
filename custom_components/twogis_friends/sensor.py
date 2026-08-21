@@ -22,16 +22,23 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from . import TwoGisConfigEntry
-from .const import DOMAIN, PERENOS_RASKHODA
+from .const import (
+    DOMAIN,
+    DRAIN_HANDOVER,
+    KEY_COUNTING_SINCE,
+    KEY_LAST_BATTERY,
+    KEY_POINTS,
+    KEY_TOTAL,
+)
 from .coordinator import TwoGisCoordinator
 from .entity import TwoGisFriendEntity
 from .models import (
-    OKNO_SEKUND,
+    WINDOW_SECONDS,
     FriendPosition,
-    dobavit_tochku,
+    add_window_point,
+    drain_increment,
     friends_ready_for_entities,
-    prirost_raskhoda,
-    srednee_po_oknu,
+    windowed_average_per_day,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,9 +100,9 @@ async def async_setup_entry(
             # берёт накопленное прямо из объекта, а не через states. Оба
             # живут в одном процессе и обновляются одним тиком координатора,
             # поэтому лишний слой был бы только помехой.
-            vsego = TwoGisRaskhodVsego(coordinator, friend_id)
-            new.append(vsego)
-            new.append(TwoGisRaskhodVSutki(coordinator, friend_id, vsego))
+            drain_total = TwoGisDrainTotal(coordinator, friend_id)
+            new.append(drain_total)
+            new.append(TwoGisDrainPerDay(coordinator, friend_id, drain_total))
         if new:
             async_add_entities(new)
 
@@ -131,7 +138,7 @@ class TwoGisFriendSensor(TwoGisFriendEntity, SensorEntity):
 
 
 @dataclass
-class SostoyanieRaskhoda(ExtraStoredData):
+class DrainState(ExtraStoredData):
     """Что переживает перезапуск Home Assistant.
 
     Накопленного мало — нужен и **последний виденный заряд**. Без него после
@@ -140,24 +147,24 @@ class SostoyanieRaskhoda(ExtraStoredData):
     которого не было.
     """
 
-    vsego: float
-    posledniy_zaryad: int | None
-    schet_s: str | None
+    total: float
+    last_battery: int | None
+    counting_since: str | None
     #: Опорные отметки скользящего окна: ``[[момент, накоплено], ...]``.
     #: Не полная история, а по одной отметке в час — этого хватает для
     #: суточного среднего, а список остаётся коротким.
-    tochki: list[list[float]] | None = None
+    points: list[list[float]] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "vsego": self.vsego,
-            "posledniy_zaryad": self.posledniy_zaryad,
-            "schet_s": self.schet_s,
-            "tochki": self.tochki or [],
+            KEY_TOTAL: self.total,
+            KEY_LAST_BATTERY: self.last_battery,
+            KEY_COUNTING_SINCE: self.counting_since,
+            KEY_POINTS: self.points or [],
         }
 
 
-class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
+class TwoGisDrainTotal(TwoGisFriendEntity, RestoreEntity, SensorEntity):
     """Сколько заряда друг израсходовал за всё время наблюдения.
 
     Растёт вечно и не сбрасывается — как счётчик пробега. «Сколько тратит в
@@ -180,10 +187,10 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
     def __init__(self, coordinator: TwoGisCoordinator, friend_id: str) -> None:
         super().__init__(coordinator, friend_id)
         self._attr_unique_id = f"{friend_id}_battery_drain"
-        self._vsego: float = 0.0
-        self._posledniy: int | None = None
-        self._schet_s: datetime | None = None
-        self._tochki: list[tuple[float, float]] = []
+        self._total: float = 0.0
+        self._last_battery: int | None = None
+        self._counting_since: datetime | None = None
+        self._points: list[tuple[float, float]] = []
 
     @property
     def available(self) -> bool:
@@ -196,74 +203,76 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
 
     @property
     def native_value(self) -> float:
-        return round(self._vsego, 1)
+        return round(self._total, 1)
 
     @property
-    def schet_s(self) -> datetime | None:
+    def counting_since(self) -> datetime | None:
         """С какого момента копится — для справки в атрибутах."""
-        return self._schet_s
+        return self._counting_since
 
     @property
-    def tochki(self) -> list[tuple[float, float]]:
+    def points(self) -> list[tuple[float, float]]:
         """Опорные отметки окна — из них соседний сенсор считает среднее."""
-        return self._tochki
+        return self._points
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "posledniy_zamer_zariada": self._posledniy,
-            "schet_s": self._schet_s.isoformat() if self._schet_s else None,
+            "last_battery_reading": self._last_battery,
+            "counting_since": (
+                self._counting_since.isoformat() if self._counting_since else None
+            ),
         }
 
     @property
-    def extra_restore_state_data(self) -> SostoyanieRaskhoda:
-        return SostoyanieRaskhoda(
-            vsego=self._vsego,
-            posledniy_zaryad=self._posledniy,
-            schet_s=self._schet_s.isoformat() if self._schet_s else None,
-            tochki=[[t, v] for t, v in self._tochki],
+    def extra_restore_state_data(self) -> DrainState:
+        return DrainState(
+            total=self._total,
+            last_battery=self._last_battery,
+            counting_since=self._counting_since.isoformat() if self._counting_since else None,
+            points=[[t, v] for t, v in self._points],
         )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if (data := await self.async_get_last_extra_data()) is not None:
-            sohranyonnoe = data.as_dict()
-            self._vsego = float(sohranyonnoe.get("vsego") or 0.0)
-            self._posledniy = sohranyonnoe.get("posledniy_zaryad")
-            if (s_momenta := sohranyonnoe.get("schet_s")) :
-                self._schet_s = dt_util.parse_datetime(s_momenta)
-            self._tochki = [
+            stored = data.as_dict()
+            self._total = float(stored.get(KEY_TOTAL) or 0.0)
+            self._last_battery = stored.get(KEY_LAST_BATTERY)
+            if (since_text := stored.get(KEY_COUNTING_SINCE)) :
+                self._counting_since = dt_util.parse_datetime(since_text)
+            self._points = [
                 (float(t), float(v))
-                for t, v in (sohranyonnoe.get("tochki") or [])
+                for t, v in (stored.get(KEY_POINTS) or [])
             ]
         # Друг сменил идентификатор, и переезд оставил здесь то, что успел
         # накопить убранный дубль. Без этого сложения цифра откатилась бы к
         # значению на момент смены, а расход за последние дни просто исчез.
-        perenos = self.hass.data.get(DOMAIN, {}).get(PERENOS_RASKHODA, {})
-        if (dobavka := perenos.pop(self.friend_id, None)):
-            self._vsego += float(dobavka)
+        handover = self.hass.data.get(DOMAIN, {}).get(DRAIN_HANDOVER, {})
+        if (carried_over := handover.pop(self.friend_id, None)):
+            self._total += float(carried_over)
             _LOGGER.info(
                 "%s: к накопленному добавлено %.1f%% от убранного дубля, стало %.1f%%",
-                self.entity_id or self.friend_id, dobavka, self._vsego,
+                self.entity_id or self.friend_id, carried_over, self._total,
             )
 
-        if self._schet_s is None:
-            self._schet_s = dt_util.utcnow()
+        if self._counting_since is None:
+            self._counting_since = dt_util.utcnow()
         # Первый замер берётся сразу при создании: иначе расход начал бы
         # считаться только со второго обновления координатора.
-        if self._posledniy is None and self.position is not None:
-            self._posledniy = self.position.battery
+        if self._last_battery is None and self.position is not None:
+            self._last_battery = self.position.battery
 
     @callback
     def _handle_coordinator_update(self) -> None:
         position = self.position
         if position is not None and position.battery is not None:
-            ubylo = prirost_raskhoda(self._posledniy, position.battery)
-            if ubylo:
-                self._vsego += ubylo
+            drop = drain_increment(self._last_battery, position.battery)
+            if drop:
+                self._total += drop
             elif (
-                self._posledniy is not None
-                and self._posledniy > position.battery
+                self._last_battery is not None
+                and self._last_battery > position.battery
             ):
                 # Единственный случай, когда падение есть, а в расход оно не
                 # идёт. Молчать здесь нельзя: именно так накопитель незаметно
@@ -272,19 +281,19 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
                     "%s: падение заряда %d -> %d отброшено как разрыв связи, "
                     "в расход не пошло",
                     self.entity_id or self.friend_id,
-                    self._posledniy,
+                    self._last_battery,
                     position.battery,
                 )
-            self._posledniy = position.battery
+            self._last_battery = position.battery
         # Отметка кладётся на каждом обновлении, но сама функция добавит
         # новую не чаще раза в час и выбросит всё, что старше окна.
-        self._tochki = dobavit_tochku(
-            self._tochki, dt_util.utcnow().timestamp(), self._vsego
+        self._points = add_window_point(
+            self._points, dt_util.utcnow().timestamp(), self._total
         )
         super()._handle_coordinator_update()
 
 
-class TwoGisRaskhodVSutki(TwoGisFriendEntity, SensorEntity):
+class TwoGisDrainPerDay(TwoGisFriendEntity, SensorEntity):
     """Средний расход заряда в сутки.
 
     Ответ на вопрос «сколько друг тратит за день»: накопленное, делённое на
@@ -302,36 +311,36 @@ class TwoGisRaskhodVSutki(TwoGisFriendEntity, SensorEntity):
         self,
         coordinator: TwoGisCoordinator,
         friend_id: str,
-        vsego: TwoGisRaskhodVsego,
+        drain_total: TwoGisDrainTotal,
     ) -> None:
         super().__init__(coordinator, friend_id)
         self._attr_unique_id = f"{friend_id}_battery_drain_daily"
-        self._vsego = vsego
+        self._drain_total = drain_total
 
     @property
     def available(self) -> bool:
-        return bool(self._vsego.tochki)
+        return bool(self._drain_total.points)
 
     @property
     def native_value(self) -> float | None:
-        srednee = srednee_po_oknu(
-            self._vsego.tochki,
+        average = windowed_average_per_day(
+            self._drain_total.points,
             dt_util.utcnow().timestamp(),
-            float(self._vsego.native_value),
+            float(self._drain_total.native_value),
         )
-        return None if srednee is None else round(srednee, 1)
+        return None if average is None else round(average, 1)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        tochki = self._vsego.tochki
-        shirina = None
-        if tochki:
-            shirina = round(
-                (dt_util.utcnow().timestamp() - tochki[0][0]) / 86400.0, 2
+        points = self._drain_total.points
+        width = None
+        if points:
+            width = round(
+                (dt_util.utcnow().timestamp() - points[0][0]) / 86400.0, 2
             )
         return {
-            "izrashodovano_vsego": self._vsego.native_value,
-            "okno_sutok": round(OKNO_SEKUND / 86400.0, 1),
-            "shirina_okna_sutok": shirina,
-            "otmetok_v_okne": len(tochki),
+            "total_drained": self._drain_total.native_value,
+            "window_days": round(WINDOW_SECONDS / 86400.0, 1),
+            "window_width_days": width,
+            "points_in_window": len(points),
         }
