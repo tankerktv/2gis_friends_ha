@@ -259,6 +259,58 @@ def srednee_po_oknu(
     return srednee_v_sutki(vsego - bylo, sekund, minimum_sutok)
 
 
+def podobrat_pary_pereezda(
+    ustroystva: Mapping[str, str],
+    zhivye: Mapping[str, str],
+) -> dict[str, str]:
+    """Кого на кого переносить при смене идентификатора: ``{старый: новый}``.
+
+    Идентификатор друга в 2ГИС не вечен — он меняется, когда человек
+    переустанавливает приложение или заходит под другим аккаунтом. Для
+    интеграции это новый друг: заводится второе устройство, а прежнее остаётся
+    навсегда. Снаружи человек выглядит задвоившимся, и вся его история
+    разрывается надвое.
+
+    Здесь ищется пара «осиротевшее устройство — новичок без устройства»
+    по совпадению имени.
+
+    **Осторожность важнее полноты.** Ошибка сливает истории двух разных людей,
+    а это хуже, чем оставить дубль: дубль виден и чинится, а перепутанные
+    истории уже не разобрать. Поэтому пара берётся, только когда она
+    единственная с обеих сторон:
+
+    * имя совпадает **точно** — ни регистра, ни пробелов не прощаем;
+    * среди осиротевших это имя встречается один раз;
+    * среди новичков — тоже один раз.
+
+    Тёзки, безымянные и всё неоднозначное просто не переносятся.
+
+    :param ustroystva: заведённые устройства, ``friend_id -> имя``
+    :param zhivye: кого 2ГИС присылает сейчас, ``friend_id -> имя``
+    """
+    osirotevshie: dict[str, list[str]] = {}
+    for friend_id, imya in ustroystva.items():
+        if friend_id in zhivye or not imya:
+            continue
+        osirotevshie.setdefault(imya, []).append(friend_id)
+
+    # Кандидатом считается ЛЮБОЙ живой с таким именем, даже если устройство у
+    # него уже заведено. Иначе переезд не сработал бы в самом частом случае:
+    # дубль уже создан, человек его увидел и только потом обновился.
+    zhivye_po_imeni: dict[str, list[str]] = {}
+    for friend_id, imya in zhivye.items():
+        if not imya:
+            continue
+        zhivye_po_imeni.setdefault(imya, []).append(friend_id)
+
+    pary: dict[str, str] = {}
+    for imya, stariki in osirotevshie.items():
+        kandidaty = zhivye_po_imeni.get(imya) or []
+        if len(stariki) == 1 and len(kandidaty) == 1:
+            pary[stariki[0]] = kandidaty[0]
+    return pary
+
+
 def can_remove_device(device_ids: set[str], hub_id: str, live_ids: set[str]) -> bool:
     """Можно ли убрать устройство из Home Assistant.
 

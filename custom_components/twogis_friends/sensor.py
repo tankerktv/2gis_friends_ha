@@ -22,6 +22,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from . import TwoGisConfigEntry
+from .const import DOMAIN, PERENOS_RASKHODA
 from .coordinator import TwoGisCoordinator
 from .entity import TwoGisFriendEntity
 from .models import (
@@ -235,6 +236,17 @@ class TwoGisRaskhodVsego(TwoGisFriendEntity, RestoreEntity, SensorEntity):
                 (float(t), float(v))
                 for t, v in (sohranyonnoe.get("tochki") or [])
             ]
+        # Друг сменил идентификатор, и переезд оставил здесь то, что успел
+        # накопить убранный дубль. Без этого сложения цифра откатилась бы к
+        # значению на момент смены, а расход за последние дни просто исчез.
+        perenos = self.hass.data.get(DOMAIN, {}).get(PERENOS_RASKHODA, {})
+        if (dobavka := perenos.pop(self.friend_id, None)):
+            self._vsego += float(dobavka)
+            _LOGGER.info(
+                "%s: к накопленному добавлено %.1f%% от убранного дубля, стало %.1f%%",
+                self.entity_id or self.friend_id, dobavka, self._vsego,
+            )
+
         if self._schet_s is None:
             self._schet_s = dt_util.utcnow()
         # Первый замер берётся сразу при создании: иначе расход начал бы
