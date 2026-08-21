@@ -1,254 +1,232 @@
-# 2GIS Friends → Home Assistant
+# 2GIS Friends for Home Assistant
 
-Друзья с карты 2ГИС в своём HA: точка на карте, заряд батареи, время последнего
-обновления. Личный self-hosted проект — данные никуда не экспортируются.
+Puts the people who share their location with you in 2GIS on your Home Assistant
+map. Every friend gets a map marker, a phone battery reading and a "last seen"
+timestamp.
 
-Протокол разобран по HAR веб-версии и 10-минутному прогону,
-подробности в [docs/findings.md](docs/findings.md).
+*[Русская версия](README.ru.md)*
 
-## Два способа
+2GIS is a mapping service widely used across Russia and the CIS. Its mobile app
+has a "Friends on map" feature; this integration brings that data into Home
+Assistant. The Home Assistant UI is available in both English and Russian.
 
-| | Интеграция (`custom_components/`) | Мост (`bridge/`) |
+---
+
+## Requirements
+
+* Home Assistant **2024.12** or newer
+* a 2GIS account with friends sharing their location with you
+
+The integration icon appears on Home Assistant 2026.3 and newer.
+
+## Installation
+
+**Via HACS** (recommended):
+
+1. HACS → **Integrations** → ⋮ → **Custom repositories**
+2. add `https://github.com/tankerktv/2gis_friends_ha`, category **Integration**
+3. find "2GIS Friends" → **Download**
+4. restart Home Assistant
+
+**Manually:** copy the `custom_components/twogis_friends` folder into
+`config/custom_components/` and restart Home Assistant.
+
+## Setup
+
+**Settings → Devices & Services → Add Integration → 2GIS Friends**
+
+You will be asked for an access token. Here is how to get it:
+
+1. open [2gis.ru](https://2gis.ru) and sign in
+2. press **F12** → **Network** tab → click the **WS** filter
+3. reload the page and wait for a `user/ws` row to appear
+4. click it → **Headers** → **Request URL**
+5. copy the value of the `token=` parameter — 40 characters, digits and letters a–f
+
+The token is verified immediately, so a typo shows up right away. When it
+eventually expires, Home Assistant will ask you for a new one.
+
+## What you get
+
+Each friend becomes a device with six entities:
+
+| Entity | Shows |
+|---|---|
+| `device_tracker` | position on the map |
+| `sensor` "Battery" | phone charge, in percent — the icon switches to the charging one |
+| `sensor` "Last seen" | when data last arrived |
+| `binary_sensor` "At home" | whether 2GIS places the friend at their own home |
+| `binary_sensor` "Charging" | whether the phone is on a charger |
+| `binary_sensor` "Data is stale" | whether the coordinates can still be trusted |
+
+Your own account shows up too, so you can track yourself without any extra setup.
+
+**"At home" is about the friend's own home, not your Home Assistant zones.**
+2GIS knows the places a person visits often and labels one of them as home.
+A friend can be at their own home and still show as `not_home` in the tracker —
+these are two different questions, and both are useful.
+
+**"Data is stale" is the one to check first when something looks odd.** It turns
+on when 2GIS reports `noGeo`, meaning the friend stopped sharing and you are
+looking at their last known position. Note that "At home" keeps its last value
+in that case too, so read the two together.
+
+A separate device for the integration itself carries one more entity:
+
+| Entity | Shows |
+|---|---|
+| `binary_sensor` "2GIS connection" | whether the socket to 2GIS is alive |
+
+**Together with "Data is stale" it answers whose problem it is** — a distinction
+that matters, because the two are fixed differently:
+
+| Connection | Data is stale | What happened |
 |---|---|---|
-| Установка | HACS или копирование в `/config` | Docker-контейнер рядом с HA |
-| Зависимости | нет, всё на встроенном aiohttp | MQTT-брокер |
-| Настройка | через UI, config flow | `.env` |
-| Сущности | нативные: трекер, 4 сенсора, 3 бинарных | те же, через MQTT Discovery |
+| on | on | the friend stopped sharing — nothing you can do |
+| off | — | our connection dropped — reloading the integration helps |
 
-**Интеграция — основной путь.** Мост оставлен как рабочая альтернатива, если
-хочется держать логику вне HA.
+This entity **stays available while the connection is down** — otherwise it
+would be useless at exactly the moment you need it.
 
----
+The tracker also carries attributes: whether the friend is moving or stationary,
+speed, heading, and the raw place label from 2GIS.
 
-## Установка интеграции
+## Options
 
-### Через HACS
+**Settings → Devices & Services → 2GIS Friends → Configure**
 
-HACS умеет ставить **только с GitHub** — он ходит через GitHub API, и
-кастомный репозиторий задаётся как `owner/repo` на github.com. Поддержки GitLab
-в нём нет. Поэтому: GitLab остаётся источником, GitHub — зеркалом (см. ниже).
+**Viewport radius.** 2GIS only sends updates for friends inside a map viewport.
+That viewport is a square around your Home Assistant coordinates, 2° by default
+(roughly 220 km in each direction). A friend outside it simply stops updating.
 
-1. HACS → Integrations → ⋮ → Custom repositories
-2. URL `https://github.com/tankerktv/2gis_friends_ha`, категория **Integration**
-3. Найти «2GIS Friends» → Download
-4. Перезапустить HA
-5. Настройки → Устройства и службы → Добавить интеграцию → «2GIS Friends»
+**Reconnect after silence.** If nothing arrives from 2GIS for a while, the
+integration rebuilds the connection. Default is 8 minutes.
 
-### Без HACS
+## Things worth knowing
 
-HACS для установки не обязателен — интеграция это просто папка:
+**Updates are pushed, not polled.** The integration never polls on a schedule —
+2GIS sends data when it changes, roughly every 4 minutes for someone standing
+still. That is why there is no "scan interval" option.
 
-```bash
-cd /config
-git clone https://github.com/tankerktv/2gis_friends_ha.git /tmp/twogis
-mkdir -p custom_components
-cp -r /tmp/twogis/custom_components/twogis_friends custom_components/
+**Coordinates can be stale.** When a friend stops sharing their location, 2GIS
+keeps returning their **last known** position. On the map this looks like the
+person is standing still right now, while the data may be hours old. You can
+tell the difference from the "Last seen" sensor, or from the `movement`
+attribute — stale points have it set to `noGeo`.
+
+**History starts when you install.** 2GIS offers no archive, so you cannot see
+where a friend was before the integration was set up.
+
+**Nothing leaves your network.** The integration talks only to 2GIS servers;
+everything else stays inside your Home Assistant.
+
+## Showing movement history
+
+The built-in map card can draw a trail for the last few hours:
+
+```yaml
+type: map
+entities:
+  - device_tracker.friend_name
+hours_to_show: 24
+auto_fit: true
 ```
 
-Обновление — `git pull` и повтор копирования. Автоматизировать можно
-дополнением **Git pull** из репозитория add-on'ов HA.
+To browse a specific day, the third-party
+[Location Timeline Card](https://github.com/konewka17/timeline_card) from HACS
+works well — these entities are compatible with it.
 
----
+## Troubleshooting
 
-## Токен
+Check **Settings → System → Logs** and search for `twogis_friends`.
 
-При добавлении интеграция попросит `access_token` — непрозрачную строку из
-40 hex-символов (не JWE, см. findings). Где взять:
+Common cases:
 
-> F12 → Network → фильтр **WS** → соединение `user/ws` → Headers →
-> Request URL → значение параметра `token=`
+* **coordinates frozen** — look at the "Last seen" sensor; if it is stale too,
+  the integration lost its connection, and reloading the integration helps;
+* **a friend is missing** — either they are not sharing their location with you,
+  or they are outside the viewport, see Options;
+* **asked for a new token** — the old one stopped working, get a fresh one the
+  same way you did during setup.
 
-Токен сразу проверяется через `api.auth.2gis.com/2.1/users/me`, так что опечатку
-видно на месте. Когда протухнет, HA сам поднимет диалог реавторизации —
-вставить свежий и всё.
+## A friend appears twice
 
-Если рядом лежит HAR-дамп, токен достаётся из него без копипасты:
+Since version 0.3.2 **this sorts itself out** — read on only if a duplicate is
+still there.
 
-```bash
-python tools/token_from_har.py путь/к/2gis.ru.har
-```
+**Why it happens at all.** A friend's id in 2GIS is not permanent — it changes
+when the person reinstalls the app or signs in with a different account. To the
+integration that is a new friend. Nothing can prevent this; it happens on the
+2GIS side.
 
----
+**What the integration does.** When it notices that a known friend has arrived
+under a new id, it moves the **existing** device onto that id. The device and
+its entities stay the same ones:
 
-## Что появится в HA
+* entity ids do not change, so cards and automations never notice;
+* the history is not split;
+* the accumulated battery drain is kept, and if a duplicate did appear, its
+  drain is added to the main counter.
 
-Проверено на живом Home Assistant: config flow проходит, устройства и сущности
-регистрируются, имена друзей подтягиваются из `profiles`. Свой аккаунт
-появляется наравне с друзьями — отдельным устройством.
+From the outside it looks like this: your friends go "unavailable" for a few
+seconds and come back correct. That is the integration reloading itself.
 
-На каждого друга — устройство с восемью сущностями:
+### When the move does not happen
 
-| Сущность | Что |
-|---|---|
-| `device_tracker.<имя>` | точка на карте, `source_type: gps` |
-| `sensor.<имя>_battery` | заряд, `device_class: battery` |
-| `sensor.<имя>_last_seen` | время апдейта, `device_class: timestamp` |
-| `sensor.<имя>_battery_drain` | накопленный расход, `total_increasing` |
-| `sensor.<имя>_battery_drain_per_day` | расход в сутки по окну в неделю |
-| `binary_sensor.<имя>_at_home` | 2ГИС считает, что друг дома |
-| `binary_sensor.<имя>_charging` | телефон на зарядке |
-| `binary_sensor.<имя>_data_is_stale` | координаты устарели (`movement: noGeo`) |
+Pairing is deliberately cautious: a mistake would merge the histories of two
+different people, which is worse than leaving a duplicate. The move only
+happens when the pair is unambiguous — one friend gone and one new friend with
+**exactly** the same name. It will not happen if:
 
-Плюс служебное устройство самой интеграции с сенсором состояния соединения.
+* the friend's name has not arrived yet;
+* another friend has the same name;
+* the name differs even slightly — case and whitespace are not forgiven.
 
-Атрибуты трекера: `movement`, `place_status`, `speed`, `course`,
-`battery_charging`, `last_seen`.
+In that case you see the duplicate as before: one device live, one permanently
+"unavailable" and with fewer entities. Here is how to sort it out by hand.
 
-`place_status` — классификация места **самим 2ГИС** (`home`, `work`), то есть
-«частое место друга», а не твоя зона в HA. Зоны HA считает сам, по координатам.
+### Removing a duplicate by hand
 
-> **Про свежесть координат.** Если `movement` равен `noGeo`, друг перестал
-> делиться геоданными, а 2ГИС продолжает отдавать **последнюю известную**
-> точку — наблюдали расхождение почти в два часа. На карте это выглядит как
-> друг, стоящий на месте прямо сейчас. Ориентироваться надо на `sensor.*_last_seen`;
-> как подсветить такие точки в интерфейсе — в [docs/lovelace.md](docs/lovelace.md).
+Settings → Devices & Services → 2GIS Friends → open the dead device → ⋮ →
+**Delete**. The live one cannot be deleted — the next update would just
+recreate it.
 
-### Иконка
+**How to keep the history.** History is tied to the entity id, not to the
+device. The order matters — get it wrong and the live friend's history is
+orphaned.
 
-Лежит в `custom_components/twogis_friends/brand/` — с Home Assistant **2026.3**
-кастомные интеграции возят brand-изображения с собой, и репозиторий
-`home-assistant/brands` заявки от них больше не принимает. На версиях старше
-2026.3 иконка просто не отобразится, ничего не сломается.
+1. **First** rename the **dead** device's entities to free the good name:
+   `device_tracker.friend_name` → `device_tracker.friend_name_old`.
+   Its history follows the rename.
+2. Delete the dead device.
+3. Now rename the live device's entities to the freed name (they most likely
+   carry a `_2` suffix right now). Their history follows too.
 
-Рисунок оригинальный, генерируется скриптом:
+The live friend ends up under a clean name with all of their history. The old
+one's history stays under `_old` and eventually goes away with the regular
+database purge.
 
-```bash
-python tools/make_brand_icon.py
-```
+> **Why you cannot just delete and rename.** Removing an entity from the
+> registry **does not remove its history** — the rows stay in the database
+> until the regular age-based purge clears them. The name therefore stays
+> taken, and on rename the recorder checks for that and **refuses** to migrate
+> the history:
+>
+> ```
+> Cannot migrate history for entity_id `…` to `…`
+> because the new entity_id is already in use
+> ```
+>
+> The rename itself still goes through, but the live friend's history stays
+> behind under the old `_2` id and disappears from the UI. If you see that
+> warning in the log, the order was wrong.
 
-Логотип 2ГИС в репозиторий сознательно не кладётся — это товарный знак.
-Если нужен именно он, замени `brand/icon.png` (256×256) и `brand/icon@2x.png`
-(512×512) вручную.
+> **The two histories cannot be merged into a single timeline** — not through
+> the UI and not through settings. To the database they are two different
+> entities. Merging them would mean editing the recorder database directly.
+> That is exactly why the move is automatic: it happens before the histories
+> drift apart.
 
-### Область охвата
+## License
 
-2ГИС отдаёт обновления только по друзьям **внутри области карты**, поэтому
-интеграция шлёт рамку вокруг координат твоего HA. Радиус по умолчанию — 2°
-(≈220 км), меняется в Настройках интеграции. Друг за пределами рамки просто не
-будет обновляться.
-
-### Смена идентификатора друга
-
-Идентификатор друга в 2ГИС не вечен: он меняется, когда человек переустанавливает
-приложение или заходит под другим аккаунтом. Раньше это выглядело как задвоившийся
-человек с разорванной надвое историей.
-
-С **0.3.1** интеграция переводит существующее устройство на новый идентификатор
-при запуске, с **0.3.2** — ещё и на ходу, в тот же момент, когда друг впервые
-приходит под новым идентификатором. Устройство и сущности остаются те же самые,
-поэтому `entity_id` не меняются, история не рвётся, а накопленный расход
-сохраняется (у появившегося двойника он забирается и прибавляется).
-
-Переезд на ходу устроен так: сторож в координаторе замечает пару и **просит
-перезагрузить запись** — сам перенос делает тот же код, что и при старте.
-Переселять на месте нельзя: сущности уже живут в памяти со старым
-идентификатором внутри, поправить один реестр мало.
-
-Подбор пары — `models.match_migration_pairs`, намеренно осторожен до отказа:
-только точное совпадение имени и только когда пара однозначна с обеих сторон.
-Тёзки и безымянные не переносятся. Ошибка здесь слила бы истории двух разных
-людей, а это хуже оставленного двойника.
-
----
-
-## GitLab как источник, GitHub как зеркало
-
-### Вариант 1: встроенное push-зеркало (проще)
-
-Settings → Repository → **Mirroring repositories** → Push:
-
-```
-https://<github-username>:<PAT>@github.com/<owner>/<repo>.git
-```
-
-PAT — classic со scope `repo` либо fine-grained с `Contents: read/write`.
-Push-зеркалирование доступно в бесплатном GitLab; ветки и теги уезжают
-автоматически при каждом push.
-
-Минус: зеркало переносит теги, но **не создаёт GitHub Releases**, а HACS
-предпочитает ставить именно релизы (без них берёт ветку по умолчанию —
-тоже работает, но без версий).
-
-### Вариант 2: CI (создаёт и релизы)
-
-[.gitlab-ci.yml](.gitlab-ci.yml) уже настроен. Нужны две переменные проекта
-(Settings → CI/CD → Variables, обе **Masked**):
-
-| Переменная | Значение |
-|---|---|
-| `GITHUB_TOKEN` | PAT github.com, scope `repo` |
-| `GITHUB_REPO` | `owner/repo` |
-| `TAG_TOKEN` | токен проекта GitLab, scope `write_repository` |
-
-Что делает пайплайн:
-
-- `validate` — проверяет `manifest.json` (обязательные ключи, версия вида
-  `X.Y.Z`, отсутствие `CHANGE_ME`), компилирует Python и гоняет тесты;
-- `tag` — ставит `vX.Y.Z`, если версия готова к выпуску (см. ниже);
-- `mirror` — пушит ветку по умолчанию и теги на GitHub;
-- а дальше уже GitHub: `.github/workflows/release.yml` на тег создаёт Release
-  с описанием из `CHANGELOG.md`.
-
-Релиз GitHub создаётся **не здесь**, а на стороне GitHub: там токен выдаётся
-задаче автоматически, и заводить ещё один PAT не нужно. Делать это с двух
-сторон нельзя — второй получит 422 и покрасит пайплайн.
-
-### Как выпустить версию
-
-Достаточно поднять версию и описать её:
-
-1. `manifest.json` → новая версия вида `X.Y.Z`;
-2. `CHANGELOG.md` → раздел `## [X.Y.Z] — ГГГГ-ММ-ДД`;
-3. запушить `main`.
-
-Тег поставит `release:tag`. **Признак готовности — раздел с датой:** пока
-правки лежат под `## [Не выпущено]`, тег не ставится, и версию можно поднимать
-заранее без риска выпустить недоделанное.
-
-Тег ставится с `-o ci.skip`: он и так уедет на GitHub стадией ниже, а без этого
-завёл бы вторую сборку, делающую ровно то же самое.
-
-Руками тоже можно — тогда `release:tag` увидит существующий тег и промолчит:
-
-```bash
-git tag -a v0.1.1 -m v0.1.1 && git push origin v0.1.1
-```
-
-Без переменной `TAG_TOKEN` задача ничего не ломает: печатает команду для
-ручной постановки и завершается успехом. `CI_JOB_TOKEN` для этого не годится —
-писать в репозиторий он не умеет.
-
-**Версия в `manifest.json` обязана совпадать с тегом** — пайплайн падает, если
-разошлись. Иначе HACS поставит одно, а HA покажет другое.
-
-### Перед включением зеркала
-
-> **Внимание.** Зеркало всегда следует за источником и перезапишет GitHub тем,
-> что лежит в GitLab. Включать его можно только когда история в GitLab совпадает
-> с той, что уехала в GitHub, — иначе публичный репозиторий откатится к более
-> старому состоянию.
-
-На GitHub работает [.github/workflows/validate.yml](.github/workflows/validate.yml):
-hassfest и HACS Action ловят ошибки структуры до установки.
-
----
-
-## Альтернатива: мост через MQTT
-
-Если логику хочется держать вне HA — `bridge/` делает то же самое отдельным
-контейнером, публикуя в MQTT с автообнаружением.
-
-```bash
-cp .env.example .env    # ZOND_TOKEN, MQTT_*, ZOND_VIEWPORT
-docker compose up -d --build
-```
-
-Инструменты разведки (`tools/ws_probe.py`, `tools/scrub.py`,
-`tools/token_from_har.py`) описаны в [docs/devtools-capture.md](docs/devtools-capture.md).
-
-## Безопасность
-
-- `.env`, `data/`, `*.har`, `probe_*.txt` — в `.gitignore`.
-- HAR с сессией 2ГИС содержит живой токен, твой email и домашние координаты
-  друзей. Не выкладывай его; после отладки токен стоит ротировать.
-- Токен в HA хранится в конфиге записи, наружу не уходит.
+MIT — see [LICENSE](LICENSE).
