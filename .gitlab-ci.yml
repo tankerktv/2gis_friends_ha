@@ -6,7 +6,9 @@
 #   main        — то, что опубликовано; один в один уезжает в GitHub
 #
 # Публикация = слить development в main и запушить main.
-# Релиз      = поставить тег vX.Y.Z на main.
+# Релиз      = поднять версию в manifest.json и дописать раздел в CHANGELOG.md.
+#              Тег ставит сам пайплайн, см. release:tag ниже. Руками
+#              `git tag` тоже можно — тогда release:tag просто ничего не делает.
 #
 # Релизы GitHub здесь НЕ создаются: это делает .github/workflows/release.yml
 # на стороне GitHub, где токен выдаётся job'у автоматически. Дублировать
@@ -16,6 +18,10 @@
 #   GITHUB_TOKEN — fine-grained PAT, Contents: read/write на репозиторий-зеркало.
 #                  Masked, без Protect (иначе не виден пайплайнам на тегах).
 #   GITHUB_REPO  — необязательна, по умолчанию берётся значение ниже.
+#   TAG_TOKEN    — токен проекта GitLab со scope write_repository, для release:tag.
+#                  Masked. Нужен потому, что CI_JOB_TOKEN писать в репозиторий
+#                  не умеет. Без переменной release:tag просто ничего не делает,
+#                  и тег ставится руками как раньше.
 
 variables:
   GITHUB_REPO: "tankerktv/2gis_friends_ha"
@@ -23,7 +29,7 @@ variables:
   # при пуше не нужно, и схема остаётся симметричной.
   PUBLIC_BRANCH: "main"
 
-stages: [validate, mirror]
+stages: [validate, tag, mirror]
 
 default:
   image: python:3.12-alpine
@@ -95,6 +101,68 @@ validate:tests:
     # Как модули загружаются в обход __init__.py — см. tests/conftest.py.
     - pip install --quiet --disable-pip-version-check pytest pytest-asyncio aiohttp
     - python -m pytest -q
+
+# --- тег --------------------------------------------------------------------
+
+release:tag:
+  stage: tag
+  # Только на публикуемой ветке. На пайплайне самого тега не запускается —
+  # там CI_COMMIT_BRANCH пуст, иначе получилось бы кольцо.
+  rules:
+    - if: $CI_COMMIT_BRANCH == $PUBLIC_BRANCH
+  script:
+    # Решение принимает Python: разбирать JSON и CHANGELOG в shell — верный
+    # способ однажды выпустить релиз не той версии.
+    - |
+      python - <<'PY' > tag_reshenie.txt
+      import json, pathlib, re
+
+      manifest = json.loads(
+          pathlib.Path("custom_components/twogis_friends/manifest.json").read_text(encoding="utf-8")
+      )
+      version = manifest.get("version", "")
+      changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+      if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+          print("SKIP: version %r не вида X.Y.Z" % version)
+      elif not re.search(r"^## \[%s\] — \d{4}-\d{2}-\d{2}\s*$" % re.escape(version),
+                         changelog, re.M):
+          # Раздел с датой — это и есть признак «версия готова к выпуску».
+          # Пока правки лежат под «## [Не выпущено]», тег не ставится.
+          print("SKIP: в CHANGELOG.md нет раздела '## [%s] — ДАТА'" % version)
+      else:
+          print("TAG v%s" % version)
+      PY
+    - cat tag_reshenie.txt
+    - |
+      if grep -q '^SKIP' tag_reshenie.txt; then
+        echo "версия не готова к выпуску — тег не ставлю"
+        exit 0
+      fi
+      tag=$(sed -n 's/^TAG //p' tag_reshenie.txt)
+
+      if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+        echo "тег $tag уже есть — ничего не делаю"
+        exit 0
+      fi
+
+      if [ -z "$TAG_TOKEN" ]; then
+        echo "нет переменной TAG_TOKEN — тег $tag надо поставить руками:"
+        echo "  git tag -a $tag -m $tag && git push origin $tag"
+        exit 0
+      fi
+
+      git config user.email "ci@${CI_SERVER_HOST}"
+      git config user.name "GitLab CI"
+      git tag -a "$tag" -m "$tag"
+      # ci.skip: тег и так уедет на GitHub из этого же пайплайна, стадией ниже.
+      # Без этого тег завёл бы вторую сборку, делающую ровно то же самое.
+      git remote add tagger "https://oauth2:${TAG_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      git push -o ci.skip tagger "$tag"
+      echo "поставлен тег $tag"
+  artifacts:
+    paths: [tag_reshenie.txt]
+    expire_in: 1 week
 
 # --- зеркало ----------------------------------------------------------------
 
