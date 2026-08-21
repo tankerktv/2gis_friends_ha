@@ -23,8 +23,8 @@ from twogis_friends.models import (
     _valid_coords,
     can_remove_device,
     friends_ready_for_entities,
-    otobrat_novye_pary,
-    podobrat_pary_pereezda,
+    match_migration_pairs,
+    unattempted_pairs,
 )
 
 MOSCOW_LAT = 55.7539
@@ -497,7 +497,7 @@ class TestFriendsReadyForEntities:
         assert friends_ready_for_entities({"f1": None}) == []
 
 
-class TestPodobratParyPereezda:
+class TestMatchMigrationPairs:
     """Подбор пар при смене идентификатора друга.
 
     Самое опасное место во всей интеграции: ошибка здесь сливает истории двух
@@ -507,33 +507,33 @@ class TestPodobratParyPereezda:
 
     def test_обычный_переезд(self):
         """Друг пропал под старым идентификатором и появился под новым."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"старый": "Аня", "боря": "Борис"},
             {"новый": "Аня", "боря": "Борис"},
         ) == {"старый": "новый"}
 
     def test_двое_переезжают_разом(self):
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а1": "Аня", "б1": "Борис"},
             {"а2": "Аня", "б2": "Борис"},
         ) == {"а1": "а2", "б1": "б2"}
 
     def test_никто_не_переезжал(self):
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а": "Аня", "б": "Борис"},
             {"а": "Аня", "б": "Борис"},
         ) == {}
 
     def test_новый_друг_это_не_переезд(self):
         """Появился человек, которого раньше не было, — переносить нечего."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а": "Аня"},
             {"а": "Аня", "в": "Виктор"},
         ) == {}
 
     def test_друг_просто_ушёл(self):
         """Пропал и никто не появился — устройство остаётся как есть."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а": "Аня", "б": "Борис"},
             {"а": "Аня"},
         ) == {}
@@ -542,52 +542,52 @@ class TestPodobratParyPereezda:
 
     def test_тёзки_среди_пропавших_не_переносятся(self):
         """Две Ани ушли, одна Аня пришла — кто из них кто, неизвестно."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а1": "Аня", "а2": "Аня"},
             {"а3": "Аня"},
         ) == {}
 
     def test_тёзки_среди_новичков_не_переносятся(self):
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а1": "Аня"},
             {"а2": "Аня", "а3": "Аня"},
         ) == {}
 
     def test_разные_имена_не_пара(self):
         """Совпадение по времени — не основание считать людей одним человеком."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а": "Аня"},
             {"б": "Борис"},
         ) == {}
 
     def test_регистр_имеет_значение(self):
         """Сравниваем точно. «аня» и «Аня» могут быть разными людьми."""
-        assert podobrat_pary_pereezda({"а1": "Аня"}, {"а2": "аня"}) == {}
+        assert match_migration_pairs({"а1": "Аня"}, {"а2": "аня"}) == {}
 
     def test_пробелы_имеют_значение(self):
-        assert podobrat_pary_pereezda({"а1": "Аня"}, {"а2": "Аня "}) == {}
+        assert match_migration_pairs({"а1": "Аня"}, {"а2": "Аня "}) == {}
 
     def test_безымянные_не_переносятся(self):
         """Без имени сопоставлять не по чему."""
-        assert podobrat_pary_pereezda({"а1": None}, {"а2": None}) == {}
-        assert podobrat_pary_pereezda({"а1": ""}, {"а2": ""}) == {}
-        assert podobrat_pary_pereezda({"а1": "Аня"}, {"а2": None}) == {}
+        assert match_migration_pairs({"а1": None}, {"а2": None}) == {}
+        assert match_migration_pairs({"а1": ""}, {"а2": ""}) == {}
+        assert match_migration_pairs({"а1": "Аня"}, {"а2": None}) == {}
 
     def test_пустые_входные_данные(self):
-        assert podobrat_pary_pereezda({}, {}) == {}
-        assert podobrat_pary_pereezda({}, {"а": "Аня"}) == {}
-        assert podobrat_pary_pereezda({"а": "Аня"}, {}) == {}
+        assert match_migration_pairs({}, {}) == {}
+        assert match_migration_pairs({}, {"а": "Аня"}) == {}
+        assert match_migration_pairs({"а": "Аня"}, {}) == {}
 
     def test_живой_друг_не_считается_осиротевшим(self):
         """Тот, кто есть в текущем списке, никуда не переезжает."""
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а": "Аня"},
             {"а": "Аня", "а2": "Аня"},
         ) == {}
 
     def test_настоящий_случай_21_08_2026(self):
         """Два реальных переезда, случившихся у владельца."""
-        pary = podobrat_pary_pereezda(
+        pary = match_migration_pairs(
             {
                 "bd4b0dc71a1d4ed1bbee2d6bf42dc7c5": "Alex Axel",
                 "8087d13508264d04a013fcb5beec16fb": "Дмитрий Котов",
@@ -615,19 +615,19 @@ class TestPodobratParyPereezda:
         устройства, — и в этом случае не срабатывала вовсе, то есть была
         бесполезна ровно тогда, когда нужна.
         """
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"старый": "Аня", "новый": "Аня"},
             {"новый": "Аня"},
         ) == {"старый": "новый"}
 
     def test_дубль_создан_у_двоих(self):
-        assert podobrat_pary_pereezda(
+        assert match_migration_pairs(
             {"а1": "Аня", "а2": "Аня_новая", "б1": "Борис", "б2": "Борис"},
             {"а2": "Аня_новая", "б2": "Борис"},
         ) == {"б1": "б2"}
 
 
-class TestOtobratNovyePary:
+class TestUnattemptedPairs:
     """Память сторожа о том, какие переезды он уже пробовал.
 
     Без неё неудачный переезд крутил бы перезагрузки записи по кругу: пара
@@ -635,10 +635,10 @@ class TestOtobratNovyePary:
     """
 
     def test_ничего_не_пробовали(self):
-        assert otobrat_novye_pary({"а1": "а2"}, {}) == {"а1": "а2"}
+        assert unattempted_pairs({"а1": "а2"}, {}) == {"а1": "а2"}
 
     def test_эту_пару_уже_пробовали(self):
-        assert otobrat_novye_pary({"а1": "а2"}, {"а1": "а2"}) == {}
+        assert unattempted_pairs({"а1": "а2"}, {"а1": "а2"}) == {}
 
     def test_второй_переезд_того_же_друга_не_блокируется(self):
         """Помним пару целиком, а не старый идентификатор.
@@ -646,20 +646,20 @@ class TestOtobratNovyePary:
         Друг может сменить идентификатор второй раз. Неудача с ``а1 -> а2``
         не должна мешать переезду ``а1 -> а3``.
         """
-        assert otobrat_novye_pary({"а1": "а3"}, {"а1": "а2"}) == {"а1": "а3"}
+        assert unattempted_pairs({"а1": "а3"}, {"а1": "а2"}) == {"а1": "а3"}
 
     def test_из_нескольких_остаётся_только_новая(self):
-        assert otobrat_novye_pary(
+        assert unattempted_pairs(
             {"а1": "а2", "б1": "б2"},
             {"а1": "а2"},
         ) == {"б1": "б2"}
 
     def test_пар_нет(self):
-        assert otobrat_novye_pary({}, {"а1": "а2"}) == {}
+        assert unattempted_pairs({}, {"а1": "а2"}) == {}
 
     def test_исходные_словари_не_меняются(self):
         pary = {"а1": "а2"}
         probovali = {"б1": "б2"}
-        otobrat_novye_pary(pary, probovali)
+        unattempted_pairs(pary, probovali)
         assert pary == {"а1": "а2"}
         assert probovali == {"б1": "б2"}

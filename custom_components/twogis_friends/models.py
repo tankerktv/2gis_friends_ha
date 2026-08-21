@@ -128,21 +128,21 @@ def friends_ready_for_entities(data: Mapping[str, FriendPosition]) -> list[str]:
 #: Падение заряда больше этого за один замер считаем мусором, а не расходом.
 #: Значение взято из накопителей телефона и часов в Home Assistant, чтобы
 #: цифры друзей можно было сравнивать с ними напрямую.
-PADENIE_MUSOR = 50
+JUNK_DROP_THRESHOLD = 50
 
 
-def prirost_raskhoda(
-    predyduschiy: int | None,
-    tekuschiy: int | None,
-    porog: int = PADENIE_MUSOR,
+def drain_increment(
+    previous: int | None,
+    current: int | None,
+    threshold: int = JUNK_DROP_THRESHOLD,
 ) -> int:
     """На сколько процентов упал заряд между двумя замерами.
 
     Расход — это только **падение**. Рост означает зарядку и в расход не идёт.
 
-    :param predyduschiy: заряд на прошлом замере, ``None`` — замера не было
-    :param tekuschiy: заряд сейчас
-    :param porog: падение больше этого отбрасывается как мусор
+    :param previous: заряд на прошлом замере, ``None`` — замера не было
+    :param current: заряд сейчас
+    :param threshold: падение больше этого отбрасывается как мусор
     :return: сколько процентов убыло; ``0``, если считать нечего
 
     **Сравнивать нужно с сохранённым значением, а не с предыдущим состоянием
@@ -156,20 +156,20 @@ def prirost_raskhoda(
     Поэтому вызывающая сторона должна такие случаи **записывать в журнал**, а
     не проглатывать молча.
     """
-    if predyduschiy is None or tekuschiy is None:
+    if previous is None or current is None:
         return 0
-    ubylo = predyduschiy - tekuschiy
-    if ubylo <= 0 or ubylo > porog:
+    drop = previous - current
+    if drop <= 0 or drop > threshold:
         return 0
-    return ubylo
+    return drop
 
 
-def srednee_v_sutki(vsego: float, sekund: float, minimum_sutok: float = 0.04) -> float:
+def average_per_day(total: float, seconds: float, min_days: float = 0.04) -> float:
     """Средний расход в сутки: накопленное, делённое на прошедшее время.
 
-    :param vsego: сколько процентов израсходовано за всё время наблюдения
-    :param sekund: сколько секунд идёт наблюдение
-    :param minimum_sutok: нижняя граница делителя
+    :param total: сколько процентов израсходовано за всё время наблюдения
+    :param seconds: сколько секунд идёт наблюдение
+    :param min_days: нижняя граница делителя
 
     Делитель ограничен снизу намеренно. В первые минуты наблюдения деление на
     почти ноль давало бы «расход 4000 % в сутки» — число формально верное и
@@ -177,12 +177,12 @@ def srednee_v_sutki(vsego: float, sekund: float, minimum_sutok: float = 0.04) ->
     держит первые показания в разумных пределах, а через сутки она уже ни на
     что не влияет.
     """
-    sutok = max(sekund / 86400.0, minimum_sutok)
-    return vsego / sutok
+    days = max(seconds / 86400.0, min_days)
+    return total / days
 
 
 #: Ширина окна, по которому считается средний расход.
-OKNO_SEKUND = 7 * 86400
+WINDOW_SECONDS = 7 * 86400
 
 #: Пока окно уже этого, среднее не показывается вовсе.
 #:
@@ -191,53 +191,53 @@ OKNO_SEKUND = 7 * 86400
 #: 18.08.2026 — окно шириной две минуты, накопитель за время простоя HA
 #: подрос на 10 %, и сенсор показал 250 %/сут. Формально верно,
 #: практически — мусор.
-MIN_SHIRINA_SEKUND = 3 * 3600.0
+MIN_WINDOW_SECONDS = 3 * 3600.0
 
 #: Чаще этого отметки в окно не добавляются. Час даёт 168 отметок на неделю —
 #: этого с запасом хватает для суточного среднего, а список остаётся коротким
 #: и дёшево переживает перезапуск.
-SHAG_TOCHKI = 3600.0
+POINT_STEP_SECONDS = 3600.0
 
 
-def dobavit_tochku(
-    tochki: list[tuple[float, float]],
+def add_window_point(
+    points: list[tuple[float, float]],
     moment: float,
-    vsego: float,
-    shag: float = SHAG_TOCHKI,
-    okno: float = OKNO_SEKUND,
+    total: float,
+    step: float = POINT_STEP_SECONDS,
+    window: float = WINDOW_SECONDS,
 ) -> list[tuple[float, float]]:
     """Кладёт отметку в окно и выбрасывает всё, что старше окна.
 
-    :param tochki: отметки ``(момент, накоплено)``, по возрастанию времени
+    :param points: отметки ``(момент, накоплено)``, по возрастанию времени
     :param moment: сейчас, в секундах
-    :param vsego: сколько израсходовано к этому моменту
-    :param shag: не добавлять отметки чаще этого
-    :param okno: ширина окна
+    :param total: сколько израсходовано к этому моменту
+    :param step: не добавлять отметки чаще этого
+    :param window: ширина окна
     :return: новый список отметок
 
     Отметки — это опорные точки, а не полная история: текущее значение в
     расчёте берётся отдельно, поэтому редкие отметки точности не портят.
     """
-    novye = list(tochki)
-    if not novye or moment - novye[-1][0] >= shag:
-        novye.append((moment, vsego))
-    granica = moment - okno
-    vnutri = [t for t in novye if t[0] >= granica]
+    updated = list(points)
+    if not updated or moment - updated[-1][0] >= step:
+        updated.append((moment, total))
+    cutoff = moment - window
+    inside = [t for t in updated if t[0] >= cutoff]
     # Хотя бы одна отметка должна остаться, иначе считать будет не от чего.
-    return vnutri or novye[-1:]
+    return inside or updated[-1:]
 
 
-def srednee_po_oknu(
-    tochki: list[tuple[float, float]],
+def windowed_average_per_day(
+    points: list[tuple[float, float]],
     moment: float,
-    vsego: float,
-    minimum_sutok: float = 0.04,
+    total: float,
+    min_days: float = 0.04,
 ) -> float | None:
     """Средний расход в сутки по скользящему окну.
 
     :return: расход в сутки или ``None``, если считать не от чего
 
-    Отличие от :func:`srednee_v_sutki` — в том, от чего считается. Там
+    Отличие от :func:`average_per_day` — в том, от чего считается. Там
     делится всё накопленное за всё время наблюдения, и такое среднее тем
     инертнее, чем дольше живёт: при наблюдении в год смена режима вдвое
     сдвинет цифру лишь на треть за месяц. Здесь старое выпадает из окна,
@@ -246,22 +246,22 @@ def srednee_po_oknu(
     Делится на **фактическую** ширину окна, а не на семь суток. Поэтому
     значение верно с первого дня, пока окно ещё не заполнилось.
 
-    Пока окно уже :data:`MIN_SHIRINA_SEKUND`, возвращается ``None``:
+    Пока окно уже :data:`MIN_WINDOW_SECONDS`, возвращается ``None``:
     на коротком промежутке любой скачок накопителя даёт бессмысленно
     большую цифру, и честнее не показывать ничего.
     """
-    if not tochki:
+    if not points:
         return None
-    nachalo, bylo = tochki[0]
-    sekund = moment - nachalo
-    if sekund < MIN_SHIRINA_SEKUND:
+    start, before = points[0]
+    seconds = moment - start
+    if seconds < MIN_WINDOW_SECONDS:
         return None
-    return srednee_v_sutki(vsego - bylo, sekund, minimum_sutok)
+    return average_per_day(total - before, seconds, min_days)
 
 
-def podobrat_pary_pereezda(
-    ustroystva: Mapping[str, str],
-    zhivye: Mapping[str, str],
+def match_migration_pairs(
+    devices: Mapping[str, str],
+    live: Mapping[str, str],
 ) -> dict[str, str]:
     """Кого на кого переносить при смене идентификатора: ``{старый: новый}``.
 
@@ -285,35 +285,35 @@ def podobrat_pary_pereezda(
 
     Тёзки, безымянные и всё неоднозначное просто не переносятся.
 
-    :param ustroystva: заведённые устройства, ``friend_id -> имя``
-    :param zhivye: кого 2ГИС присылает сейчас, ``friend_id -> имя``
+    :param devices: заведённые устройства, ``friend_id -> имя``
+    :param live: кого 2ГИС присылает сейчас, ``friend_id -> имя``
     """
-    osirotevshie: dict[str, list[str]] = {}
-    for friend_id, imya in ustroystva.items():
-        if friend_id in zhivye or not imya:
+    orphaned: dict[str, list[str]] = {}
+    for friend_id, name in devices.items():
+        if friend_id in live or not name:
             continue
-        osirotevshie.setdefault(imya, []).append(friend_id)
+        orphaned.setdefault(name, []).append(friend_id)
 
     # Кандидатом считается ЛЮБОЙ живой с таким именем, даже если устройство у
     # него уже заведено. Иначе переезд не сработал бы в самом частом случае:
     # дубль уже создан, человек его увидел и только потом обновился.
-    zhivye_po_imeni: dict[str, list[str]] = {}
-    for friend_id, imya in zhivye.items():
-        if not imya:
+    live_by_name: dict[str, list[str]] = {}
+    for friend_id, name in live.items():
+        if not name:
             continue
-        zhivye_po_imeni.setdefault(imya, []).append(friend_id)
+        live_by_name.setdefault(name, []).append(friend_id)
 
-    pary: dict[str, str] = {}
-    for imya, stariki in osirotevshie.items():
-        kandidaty = zhivye_po_imeni.get(imya) or []
-        if len(stariki) == 1 and len(kandidaty) == 1:
-            pary[stariki[0]] = kandidaty[0]
-    return pary
+    pairs: dict[str, str] = {}
+    for name, orphans in orphaned.items():
+        candidates = live_by_name.get(name) or []
+        if len(orphans) == 1 and len(candidates) == 1:
+            pairs[orphans[0]] = candidates[0]
+    return pairs
 
 
-def otobrat_novye_pary(
-    pary: Mapping[str, str],
-    uzhe_probovali: Mapping[str, str],
+def unattempted_pairs(
+    pairs: Mapping[str, str],
+    attempted: Mapping[str, str],
 ) -> dict[str, str]:
     """Какие из найденных пар сторож ещё не пробовал переносить.
 
@@ -326,13 +326,13 @@ def otobrat_novye_pary(
     идентификатор второй раз: неудача с ``A -> B`` не должна мешать
     последующему ``A -> C``.
 
-    :param pary: что предлагает перенести :func:`podobrat_pary_pereezda`
-    :param uzhe_probovali: пары из прошлых попыток, ``старый -> новый``
+    :param pairs: что предлагает перенести :func:`match_migration_pairs`
+    :param attempted: пары из прошлых попыток, ``старый -> новый``
     """
     return {
-        stary: novy
-        for stary, novy in pary.items()
-        if uzhe_probovali.get(stary) != novy
+        old_id: new_id
+        for old_id, new_id in pairs.items()
+        if attempted.get(old_id) != new_id
     }
 
 
