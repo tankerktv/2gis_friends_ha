@@ -23,6 +23,7 @@ from twogis_friends.models import (
     _valid_coords,
     can_remove_device,
     friends_ready_for_entities,
+    otobrat_novye_pary,
     podobrat_pary_pereezda,
 )
 
@@ -624,3 +625,41 @@ class TestPodobratParyPereezda:
             {"а1": "Аня", "а2": "Аня_новая", "б1": "Борис", "б2": "Борис"},
             {"а2": "Аня_новая", "б2": "Борис"},
         ) == {"б1": "б2"}
+
+
+class TestOtobratNovyePary:
+    """Память сторожа о том, какие переезды он уже пробовал.
+
+    Без неё неудачный переезд крутил бы перезагрузки записи по кругу: пара
+    находится снова при каждом обновлении координатора.
+    """
+
+    def test_ничего_не_пробовали(self):
+        assert otobrat_novye_pary({"а1": "а2"}, {}) == {"а1": "а2"}
+
+    def test_эту_пару_уже_пробовали(self):
+        assert otobrat_novye_pary({"а1": "а2"}, {"а1": "а2"}) == {}
+
+    def test_второй_переезд_того_же_друга_не_блокируется(self):
+        """Помним пару целиком, а не старый идентификатор.
+
+        Друг может сменить идентификатор второй раз. Неудача с ``а1 -> а2``
+        не должна мешать переезду ``а1 -> а3``.
+        """
+        assert otobrat_novye_pary({"а1": "а3"}, {"а1": "а2"}) == {"а1": "а3"}
+
+    def test_из_нескольких_остаётся_только_новая(self):
+        assert otobrat_novye_pary(
+            {"а1": "а2", "б1": "б2"},
+            {"а1": "а2"},
+        ) == {"б1": "б2"}
+
+    def test_пар_нет(self):
+        assert otobrat_novye_pary({}, {"а1": "а2"}) == {}
+
+    def test_исходные_словари_не_меняются(self):
+        pary = {"а1": "а2"}
+        probovali = {"б1": "б2"}
+        otobrat_novye_pary(pary, probovali)
+        assert pary == {"а1": "а2"}
+        assert probovali == {"б1": "б2"}
