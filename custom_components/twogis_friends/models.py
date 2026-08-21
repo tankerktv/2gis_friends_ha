@@ -311,6 +311,31 @@ def podobrat_pary_pereezda(
     return pary
 
 
+def otobrat_novye_pary(
+    pary: Mapping[str, str],
+    uzhe_probovali: Mapping[str, str],
+) -> dict[str, str]:
+    """Какие из найденных пар сторож ещё не пробовал переносить.
+
+    Сторож замечает смену идентификатора на ходу и просит перезагрузить запись,
+    потому что сам переезд делается при настройке. Если переезд почему-то не
+    удался, пара найдётся снова — и без этой памяти перезагрузки пошли бы
+    по кругу.
+
+    **Помним именно пару, а не старый идентификатор.** Друг может сменить
+    идентификатор второй раз: неудача с ``A -> B`` не должна мешать
+    последующему ``A -> C``.
+
+    :param pary: что предлагает перенести :func:`podobrat_pary_pereezda`
+    :param uzhe_probovali: пары из прошлых попыток, ``старый -> новый``
+    """
+    return {
+        stary: novy
+        for stary, novy in pary.items()
+        if uzhe_probovali.get(stary) != novy
+    }
+
+
 def can_remove_device(device_ids: set[str], hub_id: str, live_ids: set[str]) -> bool:
     """Можно ли убрать устройство из Home Assistant.
 

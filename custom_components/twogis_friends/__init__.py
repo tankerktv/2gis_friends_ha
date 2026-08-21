@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -12,9 +13,9 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import restore_state
 from homeassistant.helpers.device_registry import DeviceEntry
 
-from .const import DOMAIN, PERENOS_RASKHODA, SUFFIX_RASKHOD
+from .const import DOMAIN, PERENOS_RASKHODA, POPYTKI_PEREEZDA, SUFFIX_RASKHOD
 from .coordinator import TwoGisCoordinator
-from .models import can_remove_device, podobrat_pary_pereezda
+from .models import can_remove_device, otobrat_novye_pary, podobrat_pary_pereezda
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: TwoGisConfigEntry) -> bo
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # А это — тот же переезд, но для смены идентификатора на ходу.
+    entry.async_on_unload(
+        coordinator.async_add_listener(_storozh_pereezda(hass, entry, coordinator))
+    )
     return True
 
 
@@ -65,6 +70,23 @@ def _pereezd_druzey(
     """
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
+    pary, ustroystva = _naiti_pary(hass, entry, coordinator)
+
+    for stary, novy in pary.items():
+        try:
+            _pereselit(hass, dev_reg, ent_reg, ustroystva, stary, novy)
+        except Exception:  # noqa: BLE001
+            # Неудачный переезд оставляет дубль — неприятно, но терпимо.
+            # Уронить из-за него всю интеграцию было бы куда хуже.
+            _LOGGER.exception("Не удалось перенести друга %s -> %s", stary, novy)
+
+
+@callback
+def _naiti_pary(
+    hass: HomeAssistant, entry: TwoGisConfigEntry, coordinator: TwoGisCoordinator
+) -> tuple[dict[str, str], dict[str, DeviceEntry]]:
+    """Кого на кого переносить прямо сейчас и какие устройства для этого есть."""
+    dev_reg = dr.async_get(hass)
 
     imena: dict[str, str] = {}
     ustroystva: dict[str, DeviceEntry] = {}
@@ -81,14 +103,57 @@ def _pereezd_druzey(
         friend_id: (position.name or "")
         for friend_id, position in coordinator.data.items()
     }
+    return podobrat_pary_pereezda(imena, zhivye), ustroystva
 
-    for stary, novy in podobrat_pary_pereezda(imena, zhivye).items():
-        try:
-            _pereselit(hass, dev_reg, ent_reg, ustroystva, stary, novy)
-        except Exception:  # noqa: BLE001
-            # Неудачный переезд оставляет дубль — неприятно, но терпимо.
-            # Уронить из-за него всю интеграцию было бы куда хуже.
-            _LOGGER.exception("Не удалось перенести друга %s -> %s", stary, novy)
+
+@callback
+def _storozh_pereezda(
+    hass: HomeAssistant, entry: TwoGisConfigEntry, coordinator: TwoGisCoordinator
+) -> Callable[[], None]:
+    """Ловит смену идентификатора на ходу, не дожидаясь перезапуска.
+
+    Переезд при настройке чинит реестр только на старте, поэтому всё время от
+    смены идентификатора до ближайшего перезапуска дубль живёт своей жизнью.
+    Стоит это дорого: у трекера ``force_update`` включён (координатор push-овый,
+    опроса нет), поэтому замершая сущность пишет строку в историю на **каждое**
+    обновление — за сутки набегает больше тысячи одинаковых точек.
+
+    **Сторож не переселяет сам, а просит перезагрузить запись.** Так и задумано.
+    К этому моменту сущности живут в памяти со старым идентификатором внутри;
+    поправить реестр мало — пришлось бы ещё и переписывать сами объекты на
+    ходу. Перезагрузка отдаёт работу тому же коду, что и при старте, а он уже
+    проверен на живых переездах.
+    """
+
+    @callback
+    def proverit() -> None:
+        pary, _ = _naiti_pary(hass, entry, coordinator)
+        probovali: dict[str, str] = (
+            hass.data.setdefault(DOMAIN, {})
+            .setdefault(POPYTKI_PEREEZDA, {})
+            .setdefault(entry.entry_id, {})
+        )
+        novye = otobrat_novye_pary(pary, probovali)
+        if not novye:
+            return
+
+        # Помечаем ДО перезагрузки: если переезд не удастся, пара найдётся
+        # снова, и без этой отметки перезагрузки пошли бы по кругу.
+        probovali.update(novye)
+        _LOGGER.info(
+            "Друг сменил идентификатор на ходу (%s). Перезагружаю запись, "
+            "чтобы перенести устройство и сущности вместе с историей",
+            ", ".join(f"{stary} -> {novy}" for stary, novy in novye.items()),
+        )
+        # Задача НЕ привязана к записи: перезагрузка эту запись выгружает,
+        # и привязанная задача была бы отменена на середине.
+        hass.async_create_task(
+            hass.config_entries.async_reload(entry.entry_id),
+            f"{DOMAIN}_pereezd",
+            eager_start=False,
+        )
+
+    return proverit
 
 
 @callback

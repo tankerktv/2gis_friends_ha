@@ -151,17 +151,45 @@ Common cases:
 
 ## A friend appears twice
 
-The same person shows up as two devices: one live, one permanently
-"unavailable" and with fewer entities.
+Since version 0.3.2 **this sorts itself out** — read on only if a duplicate is
+still there.
 
-**Why.** A friend's id in 2GIS is not permanent — it changes when the person
-reinstalls the app or signs in with a different account. To the integration
-that is a new friend, so a new device appears and the old one stays. Nothing
-can prevent this; it happens on the 2GIS side.
+**Why it happens at all.** A friend's id in 2GIS is not permanent — it changes
+when the person reinstalls the app or signs in with a different account. To the
+integration that is a new friend. Nothing can prevent this; it happens on the
+2GIS side.
 
-**How to remove it.** Settings → Devices & Services → 2GIS Friends → open the
-dead device → ⋮ → **Delete**. The live one cannot be deleted — the next update
-would just recreate it.
+**What the integration does.** When it notices that a known friend has arrived
+under a new id, it moves the **existing** device onto that id. The device and
+its entities stay the same ones:
+
+* entity ids do not change, so cards and automations never notice;
+* the history is not split;
+* the accumulated battery drain is kept, and if a duplicate did appear, its
+  drain is added to the main counter.
+
+From the outside it looks like this: your friends go "unavailable" for a few
+seconds and come back correct. That is the integration reloading itself.
+
+### When the move does not happen
+
+Pairing is deliberately cautious: a mistake would merge the histories of two
+different people, which is worse than leaving a duplicate. The move only
+happens when the pair is unambiguous — one friend gone and one new friend with
+**exactly** the same name. It will not happen if:
+
+* the friend's name has not arrived yet;
+* another friend has the same name;
+* the name differs even slightly — case and whitespace are not forgiven.
+
+In that case you see the duplicate as before: one device live, one permanently
+"unavailable" and with fewer entities. Here is how to sort it out by hand.
+
+### Removing a duplicate by hand
+
+Settings → Devices & Services → 2GIS Friends → open the dead device → ⋮ →
+**Delete**. The live one cannot be deleted — the next update would just
+recreate it.
 
 **How to keep the history.** History is tied to the entity id, not to the
 device. The order matters — get it wrong and the live friend's history is
@@ -196,6 +224,8 @@ database purge.
 > **The two histories cannot be merged into a single timeline** — not through
 > the UI and not through settings. To the database they are two different
 > entities. Merging them would mean editing the recorder database directly.
+> That is exactly why the move is automatic: it happens before the histories
+> drift apart.
 
 ## License
 
