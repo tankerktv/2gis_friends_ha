@@ -179,7 +179,22 @@ class TwoGisDrainTotal(TwoGisFriendEntity, RestoreEntity, SensorEntity):
 
     _attr_translation_key = "battery_drain"
     _attr_native_unit_of_measurement = PERCENTAGE
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    #: TOTAL, а не TOTAL_INCREASING — намеренно.
+    #:
+    #: У TOTAL_INCREASING Home Assistant САМ УГАДЫВАЕТ сброс счётчика: если
+    #: значение стало меньше прежнего, он считает, что счётчик обнулился, и
+    #: начинает накопленную сумму статистики заново. Угадывает он не всегда
+    #: верно. 21.08.2026 при перезапуске HA у двоих друзей из пяти сумма
+    #: обнулилась (285 -> 0 и 187 -> 4), хотя само значение не падало —
+    #: в истории состояний просадки нет вовсе. Столбики расхода за те сутки
+    #: ушли в минус на 220 и 105 процентов.
+    #:
+    #: Этот накопитель по-настоящему не сбрасывается никогда, поэтому
+    #: угадывание ему только вредит. У TOTAL догадок нет: сброс объявляется
+    #: только через атрибут last_reset, а мы его не выставляем. Случайная
+    #: просадка тогда даст отрицательный шаг и следом равный положительный,
+    #: то есть сама себя погасит, вместо обнуления всей суммы.
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:battery-arrow-down-outline"
     _attr_suggested_display_precision = 0

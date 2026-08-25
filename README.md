@@ -83,7 +83,7 @@ python tools/token_from_har.py путь/к/2gis.ru.har
 | `device_tracker.<имя>` | точка на карте, `source_type: gps` |
 | `sensor.<имя>_battery` | заряд, `device_class: battery` |
 | `sensor.<имя>_last_seen` | время апдейта, `device_class: timestamp` |
-| `sensor.<имя>_battery_drain` | накопленный расход, `total_increasing` |
+| `sensor.<имя>_battery_drain` | накопленный расход, `total` |
 | `sensor.<имя>_battery_drain_per_day` | расход в сутки по окну в неделю |
 | `binary_sensor.<имя>_at_home` | 2ГИС считает, что друг дома |
 | `binary_sensor.<имя>_charging` | телефон на зарядке |
