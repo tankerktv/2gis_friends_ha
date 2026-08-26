@@ -177,6 +177,14 @@ mirror:github:
   script:
     - test -n "$GITHUB_TOKEN" || { echo "нет переменной GITHUB_TOKEN"; exit 1; }
     - apk add --no-cache bash >/dev/null
+    # НЕ ЛИШНЕЕ, хотя выглядит так. Тег ставит стадией выше задача release:tag,
+    # и ставит с `-o ci.skip`, то есть своей сборки он не запускает: уехать на
+    # GitHub он обязан из этого же пайплайна. Рабочая копия здесь своя, взятая
+    # до появления тега, и подтянется ли он сам — не гарантировано ничем.
+    # Без этой строки автоматический выпуск молча терял бы тег, а с ним и
+    # релиз на GitHub.
+    - git fetch origin --tags --force
+    - echo "теги в работе: $(git tag -l | tr '\n' ' ')"
     # Вырезает docs/ из истории перед публикацией — см. комментарий в скрипте.
     - pip install --quiet --disable-pip-version-check git-filter-repo
     - git remote remove github 2>/dev/null || true
