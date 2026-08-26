@@ -184,7 +184,11 @@ mirror:github:
     # Без этой строки автоматический выпуск молча терял бы тег, а с ним и
     # релиз на GitHub.
     - git fetch origin --tags --force
-    - echo "теги в работе: $(git tag -l | tr '\n' ' ')"
+    # Блочный скаляр, а не простая строка: двоеточие с пробелом внутри
+    # незакавыченного YAML превращает шаг в словарь, и пайплайн не
+    # запускается вовсе — «script config should be a string».
+    - |
+      echo "теги в работе: $(git tag -l | tr '\n' ' ')"
     # Вырезает docs/ из истории перед публикацией — см. комментарий в скрипте.
     - pip install --quiet --disable-pip-version-check git-filter-repo
     - git remote remove github 2>/dev/null || true
