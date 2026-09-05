@@ -69,16 +69,23 @@ When it eventually expires, Home Assistant will ask you for a new one.
 
 ## What you get
 
-Each friend becomes a device with six entities:
+Each friend becomes a device with eight entities:
 
 | Entity | Shows |
 |---|---|
 | `device_tracker` | position on the map |
 | `sensor` "Battery" | phone charge, in percent — the icon switches to the charging one |
 | `sensor` "Last seen" | when data last arrived |
+| `sensor` "Battery drain" | charge used since counting began, in percent — it only goes up |
+| `sensor` "Battery drain per day" | average daily consumption over a rolling week |
 | `binary_sensor` "At home" | whether 2GIS places the friend at their own home |
 | `binary_sensor` "Charging" | whether the phone is on a charger |
 | `binary_sensor` "Data is stale" | whether the coordinates can still be trusted |
+
+The two drain sensors are diagnostic, so look for them under **Diagnostic** on the
+device page. **"Battery drain per day" stays empty for the first three hours**
+after a fresh install — with a narrower window than that, the average says more
+about the window than about the phone.
 
 Your own account shows up too, so you can track yourself without any extra setup.
 
