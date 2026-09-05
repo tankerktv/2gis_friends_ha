@@ -35,7 +35,28 @@ The integration icon appears on Home Assistant 2026.3 and newer.
 
 **Settings → Devices & Services → Add Integration → 2GIS Friends**
 
-You will be asked for an access token. Here is how to get it:
+You will be asked for an access token. There are two ways to get one.
+
+### With the companion tool
+
+[2gis-token-extractor](https://github.com/tankerktv/2gis-token-extractor) signs
+in to 2GIS for you and prints a fresh token:
+
+```bash
+pipx install git+https://github.com/tankerktv/2gis-token-extractor.git
+2gis-token install-browser   # once: downloads Chromium, about 150 MB
+2gis-token login             # once: sign in with your phone in the window that opens
+2gis-token get               # prints the token, one line, nothing else
+```
+
+If you would rather not install Python, single-file builds are on its
+[Releases](https://github.com/tankerktv/2gis-token-extractor/releases) page —
+Windows x86_64, Linux x86_64 and macOS on Apple Silicon.
+
+Only the browser session — cookies — is stored on disk, never your password.
+`2gis-token check` tells you whether the token still works.
+
+### By hand
 
 1. open [2gis.ru](https://2gis.ru) and sign in
 2. press **F12** → **Network** tab → click the **WS** filter
@@ -43,8 +64,8 @@ You will be asked for an access token. Here is how to get it:
 4. click it → **Headers** → **Request URL**
 5. copy the value of the `token=` parameter — 40 characters, digits and letters a–f
 
-The token is verified immediately, so a typo shows up right away. When it
-eventually expires, Home Assistant will ask you for a new one.
+Either way, the token is verified immediately, so a typo shows up right away.
+When it eventually expires, Home Assistant will ask you for a new one.
 
 ## What you get
 
@@ -146,8 +167,8 @@ Common cases:
   the integration lost its connection, and reloading the integration helps;
 * **a friend is missing** — either they are not sharing their location with you,
   or they are outside the viewport, see Options;
-* **asked for a new token** — the old one stopped working, get a fresh one the
-  same way you did during setup.
+* **asked for a new token** — the old one stopped working. `2gis-token get`
+  prints a new one; by hand, repeat the steps from setup.
 
 ## A friend appears twice
 

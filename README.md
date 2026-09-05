@@ -53,20 +53,49 @@ cp -r /tmp/twogis/custom_components/twogis_friends custom_components/
 ## Токен
 
 При добавлении интеграция попросит `access_token` — непрозрачную строку из
-40 hex-символов (не JWE, см. findings). Где взять:
+40 hex-символов (не JWE, см. findings).
+
+### Через 2gis-token-extractor
+
+Отдельная программа: логинится в 2ГИС и печатает свежий токен. Соседний проект,
+GitLab `root/2gis-token-extractor`, зеркало
+[tankerktv/2gis-token-extractor](https://github.com/tankerktv/2gis-token-extractor).
+
+```bash
+pipx install git+https://github.com/tankerktv/2gis-token-extractor.git
+2gis-token install-browser   # один раз: Chromium для Playwright, ~150 МБ
+2gis-token login             # один раз: вход по СМС в открывшемся окне
+2gis-token get               # столько раз, сколько понадобится
+```
+
+`get` печатает **одну строку без украшений** — сам токен, поэтому ложится
+в конвейер как есть:
+
+```bash
+export ZOND_TOKEN="$(2gis-token get)"
+```
+
+Жив ли токен — `2gis-token check`: код 0 работает, 2 пора `login`, 1 сбой
+на стороне 2ГИС (сессия цела), 4 нет сети.
+
+На диск кладётся только сессия браузера — cookies, не пароль.
+
+### Руками, без установки
 
 > F12 → Network → фильтр **WS** → соединение `user/ws` → Headers →
 > Request URL → значение параметра `token=`
-
-Токен сразу проверяется через `api.auth.2gis.com/2.1/users/me`, так что опечатку
-видно на месте. Когда протухнет, HA сам поднимет диалог реавторизации —
-вставить свежий и всё.
 
 Если рядом лежит HAR-дамп, токен достаётся из него без копипасты:
 
 ```bash
 python tools/token_from_har.py путь/к/2gis.ru.har
 ```
+
+### В обоих случаях
+
+Токен сразу проверяется через `api.auth.2gis.com/2.1/users/me`, так что опечатку
+видно на месте. Когда протухнет, HA сам поднимет диалог реавторизации — вставить
+свежий и всё.
 
 ---
 
