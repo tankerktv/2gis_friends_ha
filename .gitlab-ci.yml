@@ -102,6 +102,16 @@ validate:tests:
     - pip install --quiet --disable-pip-version-check pytest pytest-asyncio aiohttp
     - python -m pytest -q
 
+validate:privacy:
+  stage: validate
+  # Данных друзей в репозитории быть не должно — он зеркалируется наружу.
+  # Стадия validate идёт ДО mirror: если проверка красная, до зеркала
+  # пайплайн не доходит. Закрытый список значений приходит файловой
+  # переменной PRIVATE_VALUES_FILE (Settings → CI/CD → Variables, тип File);
+  # без неё работают только структурные правила, и задача об этом скажет.
+  script:
+    - python tools/check_privacy.py
+
 # --- тег --------------------------------------------------------------------
 
 release:tag:
