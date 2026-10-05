@@ -40,7 +40,10 @@ ROOT = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], tex
 ROOT_FORBIDDEN_EXT = {".txt", ".har", ".jsonl", ".log"}
 ROOT_ALLOWED = re.compile(r"^requirements[\w-]*\.txt$")
 
-# «"lat": 56.4442387» — четыре и больше знаков после точки: настоящая точность
+# Широта в JSON с четырьмя и больше знаками после точки — настоящая точность,
+# так выглядят сырые кадры zond. Пример здесь не приводится намеренно: эта
+# проверка читает и саму себя, а первый вариант с примером-координатой
+# в комментарии уронил пайплайн на собственном файле.
 RAW_COORD = re.compile(r'"lat"\s*:\s*-?\d+\.\d{4,}')
 COORD_EXEMPT_DIRS = ("tests/", "docs/")
 
