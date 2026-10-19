@@ -24,15 +24,15 @@
 
 ### Через HACS
 
-HACS умеет ставить **только с GitHub** — он ходит через GitHub API, и
-кастомный репозиторий задаётся как `owner/repo` на github.com. Поддержки GitLab
-в нём нет. Поэтому: GitLab остаётся источником, GitHub — зеркалом (см. ниже).
+Интеграция в каталоге HACS по умолчанию (слита в `hacs/default` 18.10.2026),
+поэтому добавлять репозиторий вручную больше не нужно:
 
-1. HACS → Integrations → ⋮ → Custom repositories
-2. URL `https://github.com/tankerktv/2gis_friends_ha`, категория **Integration**
-3. Найти «2GIS Friends» → Download
-4. Перезапустить HA
-5. Настройки → Устройства и службы → Добавить интеграцию → «2GIS Friends»
+1. HACS → найти «2GIS Friends» → Download
+2. Перезапустить HA
+3. Настройки → Устройства и службы → Добавить интеграцию → «2GIS Friends»
+
+HACS ставит **только с GitHub** — он ходит через GitHub API. Поэтому GitLab
+остаётся источником, а GitHub — зеркалом, из которого и берёт HACS (см. ниже).
 
 ### Без HACS
 

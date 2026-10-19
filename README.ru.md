@@ -16,12 +16,11 @@
 
 ## Установка
 
-**Через HACS** (проще всего):
+**Через HACS** (проще всего) — интеграция в каталоге HACS по умолчанию,
+добавлять репозиторий вручную не нужно:
 
-1. HACS → **Integrations** → ⋮ → **Custom repositories**
-2. вставить `https://github.com/tankerktv/2gis_friends_ha`, категория **Integration**
-3. найти «2GIS Friends» → **Download**
-4. перезапустить Home Assistant
+1. HACS → найти «2GIS Friends» → **Download**
+2. перезапустить Home Assistant
 
 **Вручную:** скопировать папку `custom_components/twogis_friends` в `config/custom_components/` и перезапустить Home Assistant.
 

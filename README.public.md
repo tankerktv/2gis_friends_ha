@@ -21,12 +21,11 @@ The integration icon appears on Home Assistant 2026.3 and newer.
 
 ## Installation
 
-**Via HACS** (recommended):
+**Via HACS** (recommended) — it's in the default HACS store, so no custom
+repository is needed:
 
-1. HACS → **Integrations** → ⋮ → **Custom repositories**
-2. add `https://github.com/tankerktv/2gis_friends_ha`, category **Integration**
-3. find "2GIS Friends" → **Download**
-4. restart Home Assistant
+1. HACS → search for "2GIS Friends" → **Download**
+2. restart Home Assistant
 
 **Manually:** copy the `custom_components/twogis_friends` folder into
 `config/custom_components/` and restart Home Assistant.
