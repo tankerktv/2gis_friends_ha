@@ -23,8 +23,7 @@
     },
     "abort": {
       "already_configured": "Этот аккаунт 2ГИС уже добавлен",
-      "reauth_successful": "Токен обновлён",
-      "wrong_account": "Этот токен от другого аккаунта 2ГИС"
+      "reauth_successful": "Токен обновлён"
     }
   },
   "options": {

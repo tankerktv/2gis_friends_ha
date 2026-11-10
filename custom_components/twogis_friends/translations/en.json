@@ -23,8 +23,7 @@
     },
     "abort": {
       "already_configured": "This 2GIS account is already set up",
-      "reauth_successful": "Token updated",
-      "wrong_account": "That token belongs to a different 2GIS account"
+      "reauth_successful": "Token updated"
     }
   },
   "options": {

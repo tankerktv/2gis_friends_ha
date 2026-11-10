@@ -91,10 +91,20 @@ class TwoGisConfigFlow(ConfigFlow, domain=DOMAIN):
             if error:
                 errors["base"] = error
             else:
-                await self.async_set_unique_id(profile["public_user_id"])
-                self._abort_if_unique_id_mismatch(reason="wrong_account")
+                # 2ГИС меняет public_user_id ВЛАДЕЛЬЦА так же, как меняет
+                # идентификаторы друзьям — мы для этого и построили переезд
+                # устройств. Поэтому свежий токен того же аккаунта может
+                # прийти с новым id, не совпадающим с тем, что сохранён в
+                # записи. Жёсткая проверка на совпадение (которая стояла
+                # здесь раньше) отвергала такую реавторизацию как «чужой
+                # аккаунт» — ровно это и случилось, когда собственный id
+                # владельца сменился 8087d135… -> 2fdb17ce…. Токен уже
+                # проверен в _async_check; принимаем его и обновляем
+                # unique_id вслед за идентификатором.
                 return self.async_update_reload_and_abort(
-                    entry, data_updates={CONF_TOKEN: token}
+                    entry,
+                    unique_id=profile["public_user_id"],
+                    data_updates={CONF_TOKEN: token},
                 )
 
         return self.async_show_form(
